@@ -31,11 +31,19 @@ Supabase signs JWTs asymmetrically (ES256) on this project, so token
 verification reads the public key set from `SUPABASE_JWKS_URL`. There is no
 shared JWT secret to configure.
 
+The schema is applied to the hosted Supabase project. The direct database
+host is **IPv6-only**; from an IPv4-only environment use the Supabase session
+pooler instead.
+
 For a local database instead of the hosted project:
 
 ```bash
 docker compose up -d db
 ```
+
+Migrations live in `supabase/migrations/` and are append-only. Apply them in
+filename order; `supabase/local/` holds a test-only auth shim that must never
+be applied to Supabase.
 
 ## Run
 
