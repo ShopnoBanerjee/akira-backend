@@ -42,6 +42,34 @@ class Settings(BaseSettings):
     # Salt for customer_phone_hash. Rotating this orphans existing hashes.
     PHONE_HASH_SALT: str = Field(default="dev-only-not-a-secret")
 
+    # --- Scheduled jobs ----------------------------------------------------
+    # APScheduler runs in-process, so exactly one instance may have this on.
+    # A second replica would double-materialise and double-send the digest;
+    # that needs a shared lock before it is safe (Stage 2).
+    SCHEDULER_ENABLED: bool = True
+
+    # --- Outbound mail -----------------------------------------------------
+    # The daily digest. With no host configured the notifier degrades to
+    # logging and says so in the job_runs row, rather than silently sending
+    # nothing — a digest that quietly stopped is the failure this whole epic
+    # exists to make visible.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "AKIRA Ops <ops@akira.local>"
+    SMTP_STARTTLS: bool = True
+
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.SMTP_HOST)
+
+    # --- AI photo review (D6) ----------------------------------------------
+    # Advisory only. Absent, ai_review.enabled has nothing to call and the
+    # review job records that rather than failing.
+    ANTHROPIC_API_KEY: str = ""
+    AI_REVIEW_MODEL: str = "claude-sonnet-5"
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -24,6 +24,7 @@ from app.domains.sop.review_router import router as review_router
 from app.domains.sop.router import router as sop_router
 from app.domains.sop.runs_router import floor_router, runs_router
 from app.domains.users.router import router as users_router
+from app.jobs import scheduler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,7 +34,11 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    # The scheduler shares this process's event loop. Exactly one instance may
+    # run it; see app/jobs/scheduler.py.
+    await scheduler.start()
     yield
+    await scheduler.shutdown()
     await dispose_engine()
 
 

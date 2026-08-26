@@ -1573,6 +1573,92 @@
         }
       }
     },
+    "/jobs/schedule": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "What is scheduled, and when it next fires",
+        "operationId": "job_schedule_jobs_schedule_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/jobs/{job_name}/run": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Run a scheduled job now (owner only)",
+        "description": "Owner only, and every one of these is safe to press twice.\n\nMaterialisation is idempotent by unique constraint; marking missed only\nmoves runs already past grace; the digest re-sends a report rather than\nchanging anything. Nothing here is destructive, which is why it can be a\nbutton at all \u2014 but it does send mail, so it is not left to ops managers.",
+        "operationId": "run_now_jobs__job_name__run_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Run Now Jobs  Job Name  Run Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/sop/runs/today": {
       "get": {
         "tags": [
@@ -5612,6 +5698,25 @@
         ],
         "title": "ResolveRequest"
       },
+      "RunJobRequest": {
+        "properties": {
+          "business_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Date"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RunJobRequest"
+      },
       "RunStatus": {
         "type": "string",
         "enum": [
@@ -5623,6 +5728,63 @@
           "missed"
         ],
         "title": "RunStatus"
+      },
+      "ScheduleView": {
+        "properties": {
+          "running": {
+            "type": "boolean",
+            "title": "Running"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduledJob"
+            },
+            "type": "array",
+            "title": "Jobs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "running",
+          "jobs"
+        ],
+        "title": "ScheduleView"
+      },
+      "ScheduledJob": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "trigger": {
+            "type": "string",
+            "title": "Trigger"
+          },
+          "next_run_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Run At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "trigger",
+          "next_run_at"
+        ],
+        "title": "ScheduledJob"
       },
       "SetLevelRequest": {
         "properties": {

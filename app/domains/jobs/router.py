@@ -1,18 +1,25 @@
-"""Scheduled and background job history.
+"""Scheduled and background jobs: what ran, what is next, and run-now.
 
-The jobs themselves arrive in P7; this read surface exists now so the admin
-area is complete and a failed job is visible the day the first one runs.
+The read surface came first so the admin area was complete before the jobs
+existed. P7 adds the schedule view and the manual triggers.
+
+A gap where a scheduled job should have run is as significant as a failure row.
+That is why `next_run_at` is read off the live scheduler rather than recomputed
+from settings: the question this screen answers is "is this really going to
+run", and only the scheduler knows.
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 
-from app.core.deps import DbDep, require_admin
+from app.core.deps import CurrentUserDep, DbDep, require_admin, require_owner
+from app.core.errors import ValidationError
+from app.jobs import scheduler, tasks
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -83,3 +90,60 @@ async def list_job_runs(
         )
         for r in rows
     ]
+
+
+class ScheduledJob(BaseModel):
+    id: str
+    name: str
+    trigger: str
+    next_run_at: datetime | None
+
+
+class ScheduleView(BaseModel):
+    #: False when SCHEDULER_ENABLED is off, or the process failed to start it.
+    #: An empty list with running=true would look the same as a healthy idle
+    #: scheduler, and it is not.
+    running: bool
+    jobs: list[ScheduledJob]
+
+
+@router.get(
+    "/schedule",
+    response_model=ScheduleView,
+    dependencies=[Depends(require_admin)],
+    summary="What is scheduled, and when it next fires",
+)
+async def job_schedule() -> ScheduleView:
+    jobs = scheduler.describe()
+    return ScheduleView(running=bool(jobs), jobs=[ScheduledJob(**j) for j in jobs])
+
+
+class RunJobRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: For materialise_runs and daily_digest. Defaults to the job's own idea of
+    #: the right day — today for materialise, yesterday for the digest.
+    business_date: date | None = None
+
+
+@router.post(
+    "/{job_name}/run",
+    dependencies=[Depends(require_owner)],
+    summary="Run a scheduled job now (owner only)",
+)
+async def run_now(job_name: str, payload: RunJobRequest, user: CurrentUserDep) -> dict[str, Any]:
+    """Owner only, and every one of these is safe to press twice.
+
+    Materialisation is idempotent by unique constraint; marking missed only
+    moves runs already past grace; the digest re-sends a report rather than
+    changing anything. Nothing here is destructive, which is why it can be a
+    button at all — but it does send mail, so it is not left to ops managers.
+    """
+    if job_name not in tasks.MANUAL_JOBS:
+        raise ValidationError(
+            f"{job_name} cannot be run by hand.",
+            extra={"runnable": list(tasks.MANUAL_JOBS)},
+        )
+    return await tasks.run_by_name(
+        job_name, triggered_by=user.profile_id, for_date=payload.business_date
+    )
