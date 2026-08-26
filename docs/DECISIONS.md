@@ -65,6 +65,8 @@ actions only and can never approve a run.
 
 ## D4 — SOP seed comes from the real checklists
 
+> Refined by D8: only two of the seven documents turned out to be checklists.
+
 **Decided 26 Aug 2026.** Resolves spec open question 3. AKIRA has seven existing
 operational checklist documents (Kitchen Cleaning, Mise-en-place, Housekeeping,
 FNB Hot Range, FNB Service, FNB Desserts, Beverages).
@@ -93,6 +95,75 @@ Never configure or expect a symmetric `SUPABASE_JWT_SECRET`. Environment
 variables use Supabase's current names — `SUPABASE_SECRET_KEY` and
 `SUPABASE_JWKS_URL` — rather than the older `SUPABASE_SERVICE_KEY` and
 `SUPABASE_ANON_KEY` the spec's prompt pack references.
+
+## D6 — AI photo review in Stage 1, advisory only
+
+**Decided 26 Aug 2026.** Each outlet holds its own standard reference photos.
+A submitted photo is reviewed first by an AI, then by a human.
+
+**Why:** requested directly. Note this moves AI into Stage 1: spec section 7.2
+lists AI parsing as explicitly out of scope for Stage 1, and section 6 places AI
+in Stage 2.
+
+**Consequences, shaped to keep the spec's one durable AI rule ("the LLM parses
+and explains, deterministic code decides"):**
+
+- The AI is **advisory**. It emits a verdict, a confidence and a rationale
+  against that outlet's reference photo. It never blocks a submission and never
+  approves a run. A manager still decides, which is what keeps the
+  separation-of-duties constraint meaningful.
+- **"Visible light conditions" is a deterministic check, not an AI one.** Mean
+  luminance on upload, flagged `too_dark`. Cheap, repeatable, no model call.
+- New tables: `outlet_item_reference_photos` (per-outlet standard, one active
+  per outlet per item) and `run_item_ai_reviews` (kept separate from
+  `checklist_run_items` so a review can be re-run against a newer model without
+  destroying what an earlier one said; model and prompt version stay auditable).
+- New integrity flags: `too_dark`, `ai_mismatch`.
+- The vision pipeline itself lands with the integrity engine in P7.
+
+## D7 — Schema extensions the real checklists forced
+
+**Decided 26 Aug 2026.** Reading AKIRA's seven operational documents exposed
+three things the spec's schema could not express.
+
+1. **Bilingual fields.** Every paper checklist carries English and Bengali on
+   every line, and the kitchen reads Bengali. Added nullable `title_bn`,
+   `instruction_bn`, `name_bn`, `label_bn`, `caption_bn`. An English-only
+   rendering would be less usable than the paper it replaces.
+2. **`frequency` could not express the real cadences.** The spec allows
+   per_shift/daily/weekly/monthly. AKIRA actually runs daily, **alternate day**,
+   3 days a week, and **every 15 days**. The weekly-cycle ones fit
+   `active_weekdays`; alternate-day and fortnightly do not align to a 7-day
+   cycle at all. Added `alternate_day` and `fortnightly` to the enum, plus
+   `interval_days` and `anchor_date` on `checklist_assignments`.
+3. **Weekly deep clean is per-item-per-weekday.** The kitchen list pins a
+   different task to each weekday (Mon non-veg fridge, Tue veg chiller, Wed veg
+   freezer, Thu staff toilet, Fri/Sat maintenance), but `active_weekdays` sits
+   on the assignment, not the item. Modelled as separate single-purpose
+   templates, which is schema-native and needs no new column.
+
+Also added `job_runs` (0006), which the conventions require but the spec's table
+list omits, and `outlet_devices` for D3.
+
+## D8 — Only 2 of the 7 operational documents are SOP checklists
+
+**Decided 26 Aug 2026.** The other five are inventory count and requisition
+sheets (Sl No / Category / Department / Item Name / Bengali Name / Unit /
+Physical Closing Count / Requisition Qty Needed), which is Stage 2 stock-count
+data, not Stage 1 compliance.
+
+- **Real SOP checklists:** Kitchen Cleaning & Sanitation; Service & Housekeeping
+  Operations.
+- **Inventory sheets:** Hot Range (97 items), FNB Service (19), Housekeeping
+  (13), Beverages (13), Desserts (9). Captured as Stage 2 seed data, not loaded
+  into any Stage 1 table.
+- **Mise-en-place** is a par-level tracker. Seeded as a Stage 1 prep-readiness
+  checklist using `requires_value` numeric items with the paper's minimums as
+  `value_min`; the same data migrates to inventory par levels in Stage 2.
+- The paper has **no temperature logging, no opening or closing procedure, and
+  no cash or POS reconciliation**. For a ramen kitchen the missing temperature
+  log is a genuine food-safety gap, so one Food Safety Daily template is seeded
+  from spec 4.4 to cover it. Nothing else is invented.
 
 ---
 

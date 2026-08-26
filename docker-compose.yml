@@ -12,7 +12,9 @@ services:
       # expressed in the business_date() function, never in the server timezone.
       TZ: UTC
     ports:
-      - "5432:5432"
+      # Host 5432 is commonly taken by a locally installed Postgres, so map
+      # the container to 5433 and connect to that.
+      - "5433:5432"
     volumes:
       - akira-db-data:/var/lib/postgresql/data
     healthcheck:
