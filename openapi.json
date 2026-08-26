@@ -2033,7 +2033,7 @@
           "sop-runs"
         ],
         "summary": "Confirm an uploaded photo",
-        "description": "Verifies the object exists in storage, then writes the metadata. Never\nthe other way round.",
+        "description": "Verifies the object exists in storage, then writes the metadata. Never\nthe other way round.\n\nHashing the photo and running the duplicate lookback happen afterwards, in\na background task recorded to job_runs. The response returns as soon as the\nmetadata is written \u2014 the tablet is standing in a kitchen.",
         "operationId": "photo_confirm_sop_runs__run_id__items__item_id__photo_confirm_post",
         "security": [
           {

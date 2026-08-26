@@ -92,6 +92,23 @@ async def stat_object(path: str) -> ObjectStat:
     )
 
 
+async def download_object(path: str) -> bytes:
+    """The raw bytes, service-side.
+
+    Only the background integrity pass uses this. It never runs in a request:
+    a 3MB download plus a perceptual hash inside photo-confirm would make the
+    floor wait on work nobody on the floor is waiting for.
+    """
+    async with _client() as client:
+        response = await client.get(f"/object/{SOP_PHOTO_BUCKET}/{path}")
+    if response.status_code >= 400:
+        raise StorageError(
+            "Could not read the photo back from storage.",
+            extra={"provider_status": response.status_code, "path": path},
+        )
+    return response.content
+
+
 async def create_signed_view_url(path: str, *, expires_in: int = 300) -> str:
     """Short-lived read URL for the review screens. Never store these — mint
     per request."""

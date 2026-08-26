@@ -31,6 +31,16 @@ def _ctx(request: Request) -> dict[str, Any]:
     }
 
 
+def _as_dict(raw: Any) -> dict[str, Any]:
+    """jsonb comes back as text over asyncpg. Decode at the edge so the client
+    gets an object, not a string containing an object."""
+    import json
+
+    if isinstance(raw, str):
+        return dict(json.loads(raw or "{}"))
+    return dict(raw or {})
+
+
 def _require_individual_approver(user: CurrentUser) -> None:
     """Approvals need a person with a management login. Never a tablet."""
     if user.device is not None:
@@ -182,6 +192,7 @@ async def run_detail(run_id: uuid.UUID, db: DbDep, user: CurrentUserDep) -> dict
                        r.started_at, r.submitted_at, r.due_at, r.is_late,
                        r.minutes_late, cast(r.score_pct as float8) as score_pct,
                        r.critical_fail_count, r.integrity_flag_count,
+                       r.integrity_flags, r.integrity_detail,
                        r.geo_ok, r.rejection_reason,
                        sp.full_name as submitted_by_name, r.submitted_by,
                        ap.full_name as approved_by_name, r.approved_at,
@@ -216,6 +227,8 @@ async def run_detail(run_id: uuid.UUID, db: DbDep, user: CurrentUserDep) -> dict
                            cast(ri.value_numeric as float8) as value_numeric,
                            ri.value_text, ri.out_of_range, ri.note,
                            ri.photo_path, ri.photo_uploaded_at, ri.integrity_flags,
+                           ri.integrity_detail, ri.photo_processed_at,
+                           cast(ri.photo_luminance as float8) as photo_luminance,
                            v.title, v.title_bn, v.instruction, v.instruction_bn,
                            v.requires_photo, v.requires_value, v.value_type,
                            cast(v.value_min as float8) as value_min,
@@ -247,6 +260,7 @@ async def run_detail(run_id: uuid.UUID, db: DbDep, user: CurrentUserDep) -> dict
 
     for item in items:
         item["viewed_by_me"] = item["id"] in viewed
+        item["integrity_detail"] = _as_dict(item["integrity_detail"])
         if item["photo_path"]:
             item["photo_view_url"] = await storage.create_signed_view_url(
                 item["photo_path"], expires_in=300
@@ -254,7 +268,11 @@ async def run_detail(run_id: uuid.UUID, db: DbDep, user: CurrentUserDep) -> dict
         else:
             item["photo_view_url"] = None
 
-    return {**dict(run), "items": items}
+    return {
+        **dict(run),
+        "integrity_detail": _as_dict(run["integrity_detail"]),
+        "items": items,
+    }
 
 
 class MarkViewedRequest(BaseModel):

@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 
@@ -16,7 +16,7 @@ from app.core.deps import CurrentUserDep, DbDep, require_admin
 from app.core.enums import AuditAction, ItemResult
 from app.core.errors import AuthError, ForbiddenError, RateLimitError
 from app.core.security import verify_pin
-from app.domains.sop import runs_service
+from app.domains.sop import integrity, runs_service
 from app.domains.sop.runs_service import FloorActor, resolve_actor
 
 runs_router = APIRouter(prefix="/sop/runs", tags=["sop-runs"])
@@ -351,12 +351,24 @@ async def photo_confirm(
     run_id: uuid.UUID,
     item_id: uuid.UUID,
     payload: PhotoConfirmRequest,
+    background: BackgroundTasks,
     db: DbDep,
     actor: FloorActorDep,
 ) -> dict[str, Any]:
     """Verifies the object exists in storage, then writes the metadata. Never
-    the other way round."""
-    return await runs_service.confirm_photo(db, actor, run_id, item_id, path=payload.path)
+    the other way round.
+
+    Hashing the photo and running the duplicate lookback happen afterwards, in
+    a background task recorded to job_runs. The response returns as soon as the
+    metadata is written — the tablet is standing in a kitchen."""
+    result = await runs_service.confirm_photo(db, actor, run_id, item_id, path=payload.path)
+    background.add_task(
+        integrity.background_photo_pass,
+        item_id,
+        outlet_id=result.pop("outlet_id"),
+        business_date=result.pop("business_date"),
+    )
+    return result
 
 
 @runs_router.post("/{run_id}/submit", summary="Submit a run")
@@ -364,6 +376,7 @@ async def submit(
     run_id: uuid.UUID,
     payload: SubmitRequest,
     request: Request,
+    background: BackgroundTasks,
     db: DbDep,
     actor: FloorActorDep,
 ) -> dict[str, Any]:
@@ -371,7 +384,7 @@ async def submit(
     score, late-ness and geofence, raises an exception per critical fail, and
     locks the run into 'submitted'. Denied geolocation is not a flag — submit
     proceeds and geo_ok stays null."""
-    return await runs_service.submit_run(
+    run = await runs_service.submit_run(
         db,
         actor,
         run_id,
@@ -379,3 +392,12 @@ async def submit(
         geo_lng=payload.geo_lng,
         **_ctx(request),
     )
+    # Catch up any photo confirmed too close to submission to have been hashed
+    # yet. A duplicate that only surfaces after approval surfaced too late.
+    background.add_task(
+        integrity.background_run_pass,
+        run_id,
+        outlet_id=run["outlet_id"],
+        business_date=run["business_date"],
+    )
+    return run

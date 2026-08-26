@@ -21,6 +21,15 @@ dependencies = [
     # 4-digit PIN has almost no entropy, so the hash must be expensive.
     "argon2-cffi>=23.1.0",
     "email-validator>=2.3.0",
+    # Photo integrity: perceptual hashing and mean luminance. Both run in a
+    # background task, never in a request path.
+    "pillow>=11.0.0",
+    "imagehash>=4.3.1",
+    # In-process scheduler for the daily jobs. Single instance for Stage 1;
+    # a second replica would need a shared lock before this is safe.
+    "apscheduler>=3.10.4",
+    # The advisory vision review (D6).
+    "anthropic>=0.40.0",
 ]
 
 [dependency-groups]

@@ -34,6 +34,7 @@ from app.core.errors import (
     NotFoundError,
     ValidationError,
 )
+from app.domains.sop import integrity
 from app.integrations import storage
 
 ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -523,7 +524,16 @@ async def confirm_photo(
         {"id": item_id, "path": path, "bytes": stat.size_bytes},
     )
     await db.commit()
-    return {"item_id": str(item_id), "photo_path": path, "photo_bytes": stat.size_bytes}
+    # The hash, the luminance and the duplicate lookback all need the bytes
+    # back out of storage. The router hands this to a BackgroundTask: the floor
+    # must not wait on work nobody on the floor is waiting for.
+    return {
+        "item_id": str(item_id),
+        "photo_path": path,
+        "photo_bytes": stat.size_bytes,
+        "outlet_id": item["outlet_id"],
+        "business_date": item["business_date"],
+    }
 
 
 async def submit_run(
@@ -661,5 +671,10 @@ async def submit_run(
         },
         **audit_ctx,
     )
+
+    # Run-level integrity, inline: no image work, only columns just written. A
+    # manager opening the queue five seconds later must already see `late` and
+    # `out_of_geofence`. The photo-level checks are caught up in the background.
+    await integrity.evaluate_run(db, run_id)
     await db.commit()
     return await get_run(db, actor, run_id)
