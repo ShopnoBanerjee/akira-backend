@@ -79,6 +79,21 @@ E1 extracts templates from the real documents instead, mapping each line to
 warning applies during extraction — long paper checklists should be split by
 day-part rather than seeded whole.
 
+## D5 — Supabase JWTs are ES256, verified against JWKS
+
+**Decided 26 Aug 2026.** The project's JWKS endpoint serves a single ES256
+elliptic-curve public key. Supabase signs asymmetrically here; there is no
+legacy HS256 shared secret.
+
+**Why:** verified directly against the live endpoint at kickoff, not assumed.
+
+**Consequences:** `app/core/security.py` (P2) verifies with the public key set
+fetched from `SUPABASE_JWKS_URL`, caching it and refreshing on a `kid` miss.
+Never configure or expect a symmetric `SUPABASE_JWT_SECRET`. Environment
+variables use Supabase's current names — `SUPABASE_SECRET_KEY` and
+`SUPABASE_JWKS_URL` — rather than the older `SUPABASE_SERVICE_KEY` and
+`SUPABASE_ANON_KEY` the spec's prompt pack references.
+
 ---
 
 ## Assumptions in force — challenge these if wrong

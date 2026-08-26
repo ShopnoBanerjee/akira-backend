@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     # Supabase — auth + storage only. Application data goes through DATABASE_URL.
     SUPABASE_URL: str = ""
     SUPABASE_PUBLISHABLE_KEY: str = ""
-    SUPABASE_SERVICE_KEY: str = ""
-    SUPABASE_JWT_JWKS_URL: str = ""
+    SUPABASE_SECRET_KEY: str = ""
+    SUPABASE_JWKS_URL: str = ""
 
     # Direct Postgres connection. FastAPI owns all application reads and writes.
     DATABASE_URL: str = ""

@@ -23,9 +23,13 @@ uv sync
 cp .env.example .env    # then fill in the secrets
 ```
 
-`.env` needs a `SUPABASE_SERVICE_KEY` and a `DATABASE_URL`. Both come from the
+`.env` needs a `SUPABASE_SECRET_KEY` and a `DATABASE_URL`. Both come from the
 Supabase dashboard under Project Settings; every variable is documented inline
 in `.env.example`.
+
+Supabase signs JWTs asymmetrically (ES256) on this project, so token
+verification reads the public key set from `SUPABASE_JWKS_URL`. There is no
+shared JWT secret to configure.
 
 For a local database instead of the hosted project:
 
