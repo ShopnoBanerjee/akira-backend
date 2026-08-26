@@ -16,7 +16,10 @@ from app.core.config import get_settings
 from app.core.db import dispose_engine, get_engine
 from app.core.errors import register_error_handlers
 from app.domains.devices.router import router as devices_router
+from app.domains.inventory.router import router as inventory_router
+from app.domains.jobs.router import router as jobs_router
 from app.domains.outlets.router import router as outlets_router
+from app.domains.settings.router import router as settings_router
 from app.domains.users.router import router as users_router
 
 logging.basicConfig(level=logging.INFO)
@@ -54,6 +57,9 @@ register_error_handlers(app)
 app.include_router(users_router)
 app.include_router(outlets_router)
 app.include_router(devices_router)
+app.include_router(inventory_router)
+app.include_router(settings_router)
+app.include_router(jobs_router)
 
 
 @app.get("/healthz", tags=["meta"])
