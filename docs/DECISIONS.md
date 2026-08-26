@@ -66,6 +66,9 @@ actions only and can never approve a run.
 ## D4 — SOP seed comes from the real checklists
 
 > Refined by D8: only two of the seven documents turned out to be checklists.
+> Refined by D9/D11: the seeded flags are a starting point, not a fixed
+> decision — admins edit them, and D11 keeps those edits from reaching
+> backwards into completed runs.
 
 **Decided 26 Aug 2026.** Resolves spec open question 3. AKIRA has seven existing
 operational checklist documents (Kitchen Cleaning, Mise-en-place, Housekeeping,
@@ -228,6 +231,39 @@ seed with a `notes` value recording the original:
 Also note the bar sheet and the mise-en-place sheet both list Club Soda, Sugar
 Syrup, Lemon and Ice. The unique index is per department, so both survive as
 separate rows; they may or may not be genuine duplicates.
+
+## D11 — Template item version history
+
+**Decided 26 Aug 2026.** Follows directly from D9: once admins can freely edit
+`requires_photo` and `is_critical`, those edits must not reach backwards.
+
+`checklist_runs` already snapshotted `template_version`, and the spec requires
+historical runs to render against the definitions live when they ran — but
+`template_version` referred to nothing retrievable. Item rows are mutated in
+place, so a run from three weeks ago would re-render against today's flags.
+Marking an item critical would retroactively make every past run that failed it
+look like a critical failure, and any recomputed score would change with it.
+
+`checklist_template_item_versions` (migration 0011) is the thing
+`template_version` refers to. Every material edit writes an immutable row at the
+new template version; `checklist_run_items.template_item_version_id` points at
+the exact definition answered against. The live
+`checklist_template_items` row remains the current definition for new runs.
+
+Same philosophy as `app_settings`: history is reproducible, not rewritten. There
+the value in force resolves by effective date; here the definition in force
+resolves by template version.
+
+**Verified:** with an item edited from non-critical to critical and the template
+bumped v1 to v2, a run recorded at v1 still resolves to `is_critical = false`
+and `requires_photo = false`, a run at v2 resolves to true for both, and the
+live row shows the admin's edit.
+
+**What this obliges the service layer to do (P4).** A material edit must, in one
+transaction: bump `checklist_templates.version`, insert a new version row for
+every item in the template, and write the audit entry. Editing only a
+template's description is not material and must not bump the version. The run
+materialiser must stamp `template_item_version_id` on every run item it creates.
 
 ---
 
