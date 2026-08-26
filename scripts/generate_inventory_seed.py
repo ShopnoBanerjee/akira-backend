@@ -118,7 +118,16 @@ ITEMS: list[tuple[str, str, str, str, str, str | None]] = [
     ("fnb_desserts", "desserts", "Baking Powder", "বেকিং পাউডার", "gram", None),
     # --- Beverages / Bar (13) ---------------------------------------------
     ("beverages", "alcohol", "Sake", "সাকে", "millilitre", None),
-    ("beverages", "beverage", "Club Soda", "ক্লাব সোডা", "millilitre", None),
+    (
+        "beverages",
+        "beverage",
+        "Club Soda",
+        "ক্লাব সোডা",
+        "bottle",
+        "Bar sheet listed this in ML, but it is counted and reordered by the "
+        "bottle (750 ml each). Unit corrected to bottle so the par of 12 means "
+        "12 bottles rather than 12 ml.",
+    ),
     ("beverages", "beverage", "Coffee Syrup", "কফি সিরাপ", "millilitre", None),
     ("beverages", "beverage", "Grenadine", "গ্রেনাডিন", "millilitre", None),
     ("beverages", "beverage", "Litchi Slush", "লিচু স্লাশ", "millilitre", None),

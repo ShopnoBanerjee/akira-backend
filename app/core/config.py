@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # Direct Postgres connection. FastAPI owns all application reads and writes.
     DATABASE_URL: str = ""
 
+    # Log every statement. Local only, and noisy - off by default.
+    SQL_ECHO: bool = False
+
     # Comma-separated list of allowed browser origins.
     CORS_ORIGINS: str = "http://localhost:5173"
 

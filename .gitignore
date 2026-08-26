@@ -14,6 +14,7 @@ htmlcov/
 
 # Environment — never commit real credentials
 .env
+.seed-credentials.md
 .env.local
 .env.*.local
 

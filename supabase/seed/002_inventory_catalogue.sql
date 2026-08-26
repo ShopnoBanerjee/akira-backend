@@ -100,7 +100,7 @@ from (values
     ('Gelatine Sheet', 'জেলাটিন শিট', 'fnb_desserts', 'desserts', 'piece', null),
     ('Baking Powder', 'বেকিং পাউডার', 'fnb_desserts', 'desserts', 'gram', null),
     ('Sake', 'সাকে', 'beverages', 'alcohol', 'millilitre', null),
-    ('Club Soda', 'ক্লাব সোডা', 'beverages', 'beverage', 'millilitre', null),
+    ('Club Soda', 'ক্লাব সোডা', 'beverages', 'beverage', 'bottle', 'Bar sheet listed this in ML, but it is counted and reordered by the bottle (750 ml each). Unit corrected to bottle so the par of 12 means 12 bottles rather than 12 ml.'),
     ('Coffee Syrup', 'কফি সিরাপ', 'beverages', 'beverage', 'millilitre', null),
     ('Grenadine', 'গ্রেনাডিন', 'beverages', 'beverage', 'millilitre', null),
     ('Litchi Slush', 'লিচু স্লাশ', 'beverages', 'beverage', 'millilitre', null),

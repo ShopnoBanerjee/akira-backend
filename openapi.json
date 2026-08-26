@@ -2,10 +2,162 @@
   "openapi": "3.1.0",
   "info": {
     "title": "AKIRA Ops Suite API",
-    "description": "Internal multi-outlet restaurant operations platform.",
+    "description": "Internal multi-outlet restaurant operations platform.\n\nAuthenticate with a Supabase access token: `Authorization: Bearer <token>`.",
     "version": "0.1.0"
   },
   "paths": {
+    "/users/me": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "The signed-in user",
+        "description": "Profile, global role and outlet memberships for the current session.\n\nThe client uses this to decide which shell to render, so it is the first\ncall after sign-in.",
+        "operationId": "read_me_users_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Update your own details",
+        "description": "Change your own name or phone. Role, outlets and activation are not\neditable here \u2014 those are administrative actions.",
+        "operationId": "update_me_users_me_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/outlets": {
+      "get": {
+        "tags": [
+          "outlets"
+        ],
+        "summary": "Outlets you can see",
+        "description": "Owners and ops managers see every outlet. Everyone else sees only the\noutlets they are a member of.",
+        "operationId": "list_outlets_outlets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Outlet"
+                  },
+                  "type": "array",
+                  "title": "Response List Outlets Outlets Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/outlets/{outlet_id}": {
+      "get": {
+        "tags": [
+          "outlets"
+        ],
+        "summary": "One outlet",
+        "description": "Re-checks access against the id rather than trusting that possession of\nan id implies permission \u2014 the fetch-by-id IDOR.",
+        "operationId": "get_outlet_outlets__outlet_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outlet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Outlet Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Outlet"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "tags": [
@@ -28,6 +180,368 @@
             }
           }
         }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Readyz",
+        "description": "Readiness probe. Unlike /healthz this does check the database, because a\nprocess that cannot reach Postgres is running but not serving.",
+        "operationId": "readyz_readyz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Readyz Readyz Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DeviceSummary": {
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Device Id"
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outlet Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "device_id",
+          "outlet_id",
+          "label"
+        ],
+        "title": "DeviceSummary",
+        "description": "Present only when the caller is a shared outlet tablet."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "MeResponse": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Profile Id"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "employee_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Code"
+          },
+          "global_role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "is_management": {
+            "type": "boolean",
+            "title": "Is Management"
+          },
+          "is_global": {
+            "type": "boolean",
+            "title": "Is Global"
+          },
+          "has_pin": {
+            "type": "boolean",
+            "title": "Has Pin"
+          },
+          "outlets": {
+            "items": {
+              "$ref": "#/components/schemas/OutletSummary"
+            },
+            "type": "array",
+            "title": "Outlets"
+          },
+          "device": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeviceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "full_name",
+          "email",
+          "phone",
+          "employee_code",
+          "global_role",
+          "is_active",
+          "is_management",
+          "is_global",
+          "has_pin",
+          "outlets"
+        ],
+        "title": "MeResponse"
+      },
+      "Outlet": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone"
+          },
+          "geo_lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geo Lat"
+          },
+          "geo_lng": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geo Lng"
+          },
+          "geofence_radius_m": {
+            "type": "integer",
+            "title": "Geofence Radius M"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "name",
+          "city",
+          "timezone",
+          "geo_lat",
+          "geo_lng",
+          "geofence_radius_m",
+          "is_active"
+        ],
+        "title": "Outlet"
+      },
+      "OutletSummary": {
+        "properties": {
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outlet Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role_at_outlet": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "is_primary": {
+            "type": "boolean",
+            "title": "Is Primary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outlet_id",
+          "code",
+          "name",
+          "role_at_outlet",
+          "is_primary"
+        ],
+        "title": "OutletSummary"
+      },
+      "UpdateMeRequest": {
+        "properties": {
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UpdateMeRequest",
+        "description": "Only what a person may change about themselves.\n\nRole, outlets and activation are deliberately absent: allowing them here\nwould let anyone promote themselves through their own profile."
+      },
+      "UserRole": {
+        "type": "string",
+        "enum": [
+          "owner",
+          "ops_manager",
+          "outlet_manager",
+          "shift_lead",
+          "staff"
+        ],
+        "title": "UserRole"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
       }
     }
   }
