@@ -38,6 +38,11 @@ src = ["app", "tests"]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4", "ASYNC", "RUF"]
 ignore = ["B008"]  # FastAPI Depends() in defaults is the documented idiom
 
+[tool.ruff.lint.per-file-ignores]
+# Bengali item names are the point of this file, not a typo. RUF001-003
+# flag non-Latin characters as confusable with Latin ones.
+"scripts/generate_inventory_seed.py" = ["RUF001", "RUF002", "RUF003"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 

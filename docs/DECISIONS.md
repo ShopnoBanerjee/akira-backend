@@ -165,6 +165,70 @@ data, not Stage 1 compliance.
   log is a genuine food-safety gap, so one Food Safety Daily template is seeded
   from spec 4.4 to cover it. Nothing else is invented.
 
+## D9 — Admin-editable settings, and what stays locked
+
+**Decided 26 Aug 2026.** Requested directly: an admin settings area where
+"everything" is editable.
+
+`app_settings` (migration 0010) is **append-only with an effective date**. A
+change inserts a new row; the value in force at any moment is the newest row
+whose `effective_from` is at or before it, with an outlet override beating the
+global value. Scoring a period from three months ago therefore uses the weights
+that were live then, so historical outlet scores stay reproducible instead of
+silently rewriting themselves whenever somebody nudges a weight.
+
+The **code owns the schema of settings**, not the table. `app/core/settings.py`
+holds a registry: every known key with its type, default, valid range, and
+whether an outlet may override it. A key absent from the registry is ignored on
+read. That is what stops a typo or an out-of-range value from quietly breaking
+scoring.
+
+Editable: scoring weights and health bands, integrity thresholds, AI review
+controls, job times and notification recipients.
+
+**Deliberately not editable — the 05:00 business-date rollover.** Two concrete
+reasons, not caution:
+
+1. `business_date()` is declared `immutable`, which is what lets the planner use
+   it in index expressions. Reading a runtime value would force it down to
+   `stable` and cost those indexes.
+2. Every historical row already stores its `business_date`. A changed rule would
+   disagree with months of recorded data.
+
+Changing it is a migration plus an explicit backfill, on purpose.
+
+## D10 — Inventory catalogue pulled into Stage 1
+
+**Decided 26 Aug 2026.** The spec defers the whole stock module to Stage 2.
+Adding inventory items through admin requires the catalogue now, so migration
+0009 lands it. Stage 1 ships **catalogue and per-outlet levels only** — there is
+no counting flow and no requisition engine; both will build on these tables
+rather than replacing them.
+
+**Shape: one shared catalogue, levels per outlet.** Add an item once and every
+outlet can stock it; a larger outlet holds more of it. Two outlets entering the
+same ingredient under two ids would make cross-outlet consumption and cost
+comparison meaningless.
+
+Seeded with all 151 items transcribed from the five paper count sheets, with
+Bengali names, units and departments. `scripts/generate_inventory_seed.py` holds
+the transcription so it stays auditable and regenerable; the SQL it emits is
+idempotent.
+
+**Three data-quality problems found in the source sheets**, corrected in the
+seed with a `notes` value recording the original:
+
+- *Begun* carried the Bengali "শুরু করা হয়েছে" (= "has been started"), a
+  machine-translation error. Begun is the aubergine, বেগুন.
+- *Habit Panko* carried "অভ্যাস" (= "habit"), the same class of literal
+  mistranslation. Recorded as Panko breadcrumbs.
+- *Pillow* (বালিশ) is filed under Cleaning in housekeeping, which looks wrong —
+  most likely a scouring pad. Left as-is pending confirmation.
+
+Also note the bar sheet and the mise-en-place sheet both list Club Soda, Sugar
+Syrup, Lemon and Ice. The unique index is per department, so both survive as
+separate rows; they may or may not be genuine duplicates.
+
 ---
 
 ## Assumptions in force — challenge these if wrong
