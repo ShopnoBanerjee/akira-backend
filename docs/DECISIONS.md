@@ -265,6 +265,82 @@ every item in the template, and write the audit entry. Editing only a
 template's description is not material and must not bump the version. The run
 materialiser must stamp `template_item_version_id` on every run item it creates.
 
+## D12 — What the integrity engine had to decide for itself
+
+**Decided 27 Aug 2026.** Building P7 forced six choices the spec and D6 left
+open. Each is here because it will look arbitrary to whoever reads the code
+next.
+
+**1. A flag carries its evidence.** Migration 0004 gave run items an
+`integrity_flags` array and nowhere to say *why*. `duplicate_photo` on its own
+tells a manager to distrust a photo without telling them what it matched, which
+is the kind of unfalsifiable red chip staff learn to ignore within a month.
+0013 adds `integrity_detail`: the matched run and Hamming distance, the measured
+luminance against its floor, the share of a run that landed inside the burst
+window. The review screen renders the evidence beneath every chip.
+
+**2. Run-level flags are not item-level flags.** `late`, `out_of_geofence` and
+`burst_upload` describe a submission, not a photograph. Stamping them onto each
+photo would misplace the evidence and inflate any per-photo count built on top.
+`checklist_runs` gets its own `integrity_flags` array; `integrity_flag_count`
+is the sum of both, which is the number the outlet-score penalty reads.
+
+**3. Each pass owns its own flags.** The deterministic photo pass recomputes
+duplicate/stale/dark and therefore *clears* them when a photo is re-shot — a
+rejected-and-redone item must not keep an accusation it has answered — but
+never touches `ai_mismatch`, which it knows nothing about. The AI pass is the
+mirror image.
+
+**4. `mark_missed` touches `pending` only, never `in_progress`.** `missed` is
+terminal, so flipping a run somebody is halfway through would lock it and
+discard the work. A run being done late is what the `late` flag exists for. The
+exception it raises is **medium**, not high: nobody did the checklist, which is
+a management problem to chase, not the same class of event as a critical
+food-safety item failed outright.
+
+**5. Three AI-review rules, refining D6.**
+
+- *The confidence threshold is applied at read time.* The model's raw verdict
+  and confidence are stored; `ai_review.uncertain_below_confidence` downgrades a
+  low-confidence verdict to `uncertain` when the flag is decided and when the
+  screen renders it. Storing the downgraded value would make the record
+  unreadable against a threshold that has since moved — the same reason
+  `app_settings` is effective-dated (D9).
+- *`ai_mismatch` fires in one direction only:* staff recorded a pass and the
+  reviewer is confident it is a fail. The reverse is staff being harder on
+  themselves than the machine, and flagging it would punish honesty.
+- *A missing reference photo degrades rather than blocks.* D6 says the AI
+  compares against that outlet's own standard, and it does when one exists.
+  Requiring one would mean nothing works until every station at every outlet has
+  been shot under service lighting — which is exactly how that prerequisite went
+  unbuilt for three epics. Without one the model judges on the item's
+  instruction and is told to lean towards `uncertain`; the review records that it
+  had no standard.
+
+Silence from the model is **not** `uncertain`. An unreachable provider is a
+recorded skip with a reason, never a row: writing one either way would put a
+fabricated opinion into an audit trail.
+
+**6. Notifications degrade loudly.** Refines A3. With no SMTP host configured
+the digest is still built, rendered and logged, and the `job_runs` row records
+`smtp_not_configured`. Requested directly: leave it degrading visibly rather
+than switching the configured channel to `log_only`, because a digest that
+quietly stopped sending while reporting success every morning is the precise
+failure this epic exists to prevent.
+
+**Vision model: `claude-sonnet-5`, by the owner's decision.** Every photo on
+every run at every outlet is reviewed, so the per-photo cost is the whole cost.
+`run_item_ai_reviews` records the model and prompt version on every verdict and
+is keyed on both, so re-running a period against a more capable model later is
+additive and never overwrites what the first one said.
+
+**Found while testing, not while reading:** the six photos already in Storage
+from P5 and P6 are 262-byte stubs, not decodable images. `process_photo` now
+raises `UndecodableImage` rather than swallowing it, the failure lands in
+`job_runs`, and the item stays unprocessed — which the review screen shows as
+"not checked yet", which is the truth. `scripts/backfill_photo_integrity.py`
+hashes pre-P7 photos and is idempotent.
+
 ---
 
 ## Assumptions in force — challenge these if wrong

@@ -68,7 +68,11 @@ class Settings(BaseSettings):
     # Advisory only. Absent, ai_review.enabled has nothing to call and the
     # review job records that rather than failing.
     ANTHROPIC_API_KEY: str = ""
-    AI_REVIEW_MODEL: str = "claude-opus-5"
+    # Sonnet by owner's decision (D12): every photo on every run at every
+    # outlet is reviewed, so the per-photo cost is the whole cost. The model
+    # is recorded on every verdict, so re-running a run against a different
+    # one later is additive rather than a rewrite.
+    AI_REVIEW_MODEL: str = "claude-sonnet-5"
 
 
 @lru_cache

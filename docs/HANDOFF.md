@@ -5,7 +5,7 @@ Claude Code session picking the project up cold. It tells you what exists, why
 it was built the way it was, how to run it, what will bite you, and what to do
 next.
 
-Last updated: end of P6, 27 Aug 2026. Both repos clean and pushed.
+Last updated: end of P7, 27 Aug 2026. Both repos clean.
 
 ---
 
@@ -20,8 +20,8 @@ restaurant group in Kolkata. Stage 1 delivers three things:
 3. **Sales ingestion skeleton** — not built yet (P9).
 
 The governing specification is `docs/STAGE1_SPEC.md` (present in both repos).
-It is the contract. Where this build deviates from it — and it does, in eleven
-places — every deviation is recorded in `docs/DECISIONS.md` as D1–D11 with its
+It is the contract. Where this build deviates from it — and it does, in twelve
+places — every deviation is recorded in `docs/DECISIONS.md` as D1–D12 with its
 reasoning. **Read DECISIONS.md before proposing any change**; several
 "obvious improvements" are things that were deliberately decided against.
 
@@ -53,13 +53,16 @@ CI in both repos fails if the committed types drift.
 
 ```
 app/core/        config, db, deps, errors, audit, security, actor,
-                 business_date, scoring, enums, settings_registry
+                 business_date, scoring, enums, settings_registry,
+                 settings_value (resolves a setting at a moment in time)
 app/domains/     outlets/ users/ devices/ inventory/ settings/ jobs/ sop/
                  — each: router.py (HTTP) → service.py (logic, transactions,
                    audit) → repository.py (SQL) → schemas.py (pydantic)
-app/integrations/ storage.py (Supabase Storage), supabase_auth.py (Auth Admin)
-app/jobs/        EMPTY — this is P7's home
-supabase/migrations/  0001–0012, append-only, source of truth for schema
+app/integrations/ storage.py (Supabase Storage), supabase_auth.py (Auth Admin),
+                 vision.py (the advisory photo review's model call)
+app/jobs/        runner.py (job_runs bracketing), scheduler.py (APScheduler),
+                 tasks.py (the three jobs), digest.py, notify.py
+supabase/migrations/  0001–0013, append-only, source of truth for schema
 supabase/seed/        001_outlets_and_sop.sql, 002_inventory_catalogue.sql
 supabase/local/       0000_local_auth_shim.sql — TEST ONLY, never on Supabase
 scripts/         export_openapi.py, seed_users.py,
@@ -67,7 +70,8 @@ scripts/         export_openapi.py, seed_users.py,
 ```
 
 `app/domains/sop/` is the largest: `router.py` (template authoring),
-`runs_router.py` + `runs_service.py` (the runner), `review_router.py` (P6).
+`runs_router.py` + `runs_service.py` (the runner), `review_router.py` (P6),
+`integrity.py` + `ai_review.py` + `reference_router.py` (P7).
 
 ### Frontend structure
 
@@ -75,7 +79,7 @@ scripts/         export_openapi.py, seed_users.py,
 src/app/         Router.tsx (path-based), AppShell (/app), FloorShell (/floor),
                  navigate.ts
 src/features/    auth/ dashboard/ admin/{outlets,users,devices,inventory,
-                 settings,jobs}/ sop/{templates,review}/ floor/
+                 settings,jobs}/ sop/{templates,review,reference}/ floor/
 src/lib/         api.ts (fetch + problem+json + actor token), supabase.ts,
                  image.ts (client resize), utils.ts
 src/components/ui/primitives.tsx   hand-rolled Button/Dialog/etc.
@@ -110,13 +114,14 @@ would reject the row anyway.
 
 **SOFT DELETE.** `deleted_at` on user-facing entities; all queries filter it.
 
-**RLS.** Enabled and FORCED on all 25 tables. `anon` has zero grants;
+**RLS.** Enabled and FORCED on all 25 tables. Note 0013 added columns only, no
+new tables. `anon` has zero grants;
 `authenticated` has SELECT only. There is no browser write path — every write
 goes through FastAPI, which holds the service role.
 
 ---
 
-## 4. The eleven decisions (D1–D11)
+## 4. The twelve decisions (D1–D12)
 
 Full text in `docs/DECISIONS.md`. Summary, because each one will look like a
 mistake until you know why:
@@ -133,6 +138,7 @@ mistake until you know why:
 | **D9** | `app_settings` is **append-only with an effective date**. The value in force at a moment is the newest row at-or-before it, outlet override beating global. Historical scores stay reproducible. The registry in `app/core/settings_registry.py` owns each key's type/default/range. |
 | **D10** | Inventory catalogue pulled into Stage 1: ONE shared catalogue, levels per outlet. 151 items seeded from the real count sheets. |
 | **D11** | **Template item versioning.** Any material item edit bumps `checklist_templates.version` AND snapshots every item into `checklist_template_item_versions`, in one transaction. Runs point at the exact version they were answered against, so an admin flipping `is_critical` today cannot retroactively make past runs look like critical failures. |
+| **D12** | **What P7 decided for itself.** Six rules, each of which looks arbitrary until you know why: a flag carries its evidence (`integrity_detail`); run-level flags live on the run, not stamped onto each photo; each pass clears only its own flags; `mark_missed` never touches `in_progress`; the AI confidence threshold is applied at READ time and `ai_mismatch` fires in one direction only; notifications degrade **loudly**. Vision model is `claude-sonnet-5` by the owner's decision. |
 
 ---
 
@@ -142,12 +148,21 @@ mistake until you know why:
 `.seed-credentials.md`. Scan staged diffs before every commit:
 
 ```bash
-git diff --cached | grep -E "^\+" | grep -qE "sb_secret_|eyJ[A-Za-z0-9_-]{30,}" && echo ABORT || echo clean
+git diff --cached | grep -E "^\+" | grep -qE "sb_secret_|sk-ant-|eyJ[A-Za-z0-9_-]{30,}" && echo ABORT || echo clean
 ```
 
 `akira-backend/.env` holds (values are IN that file, not here):
 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`,
 `SUPABASE_JWKS_URL`, `DATABASE_URL`, `TEST_DATABASE_URL`, `PHONE_HASH_SALT`.
+
+P7 added, all optional and all documented in `.env.example`:
+
+| | |
+|---|---|
+| `SCHEDULER_ENABLED` | Default true. **Exactly one instance may have this on.** |
+| `SMTP_HOST` / `_PORT` / `_USERNAME` / `_PASSWORD` / `_FROM` / `_STARTTLS` | Unset, so the digest degrades to logging and says so. |
+| `ANTHROPIC_API_KEY` | **Not set.** Without it the AI review records a skip rather than a verdict. |
+| `AI_REVIEW_MODEL` | `claude-sonnet-5` (D12). |
 
 `akira-frontend/.env.local` holds the two `VITE_SUPABASE_*` values (both
 browser-safe) and `VITE_API_BASE_URL`.
@@ -201,8 +216,13 @@ TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5433/postgres uv run pytest
 uv run python scripts/export_openapi.py     # after ANY endpoint change
 
 # frontend
-pnpm typecheck && pnpm lint && pnpm test && pnpm build
+pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm build
 ```
+
+`pnpm format:check` is in CI and is easy to forget locally.
+
+Starting the API also starts the scheduler. To work without it firing jobs at
+you, `SCHEDULER_ENABLED=false uv run uvicorn ...`.
 
 ### Test database
 
@@ -224,17 +244,23 @@ never successfully started on this machine; it is not required.
 
 ### Supabase
 
-Live and fully migrated. **`db.<ref>.supabase.co` resolves to IPv6 only** — it
-works from this machine but is unreachable from IPv4-only environments (many CI
-runners). Use the session pooler there. Storage bucket `sop-photos` exists,
-private, 5MB cap, image MIME types only.
+Live and fully migrated through 0013. **`db.<ref>.supabase.co` resolves to IPv6
+only** — it works from this machine but is unreachable from IPv4-only
+environments (many CI runners). Use the session pooler there. Storage bucket
+`sop-photos` exists, private, 5MB cap, image MIME types only. It now holds
+submitted photos under `{outlet}/{business_date}/{run}/{item}.jpg` and reference
+standards under `reference/{outlet}/{template_item}.jpg`.
+
+Migrations are applied to Supabase by hand — there is no `supabase db push` in
+this workflow. Read the file, run it inside a transaction with asyncpg using
+`DATABASE_URL`, then verify the columns exist. That is how 0013 landed.
 
 ---
 
-## 7. What is built (P0–P6)
+## 7. What is built (P0–P7)
 
-**65 API operations across 51 paths. 162 backend tests. 25 tables. All live on
-Supabase.**
+**71 API operations across 56 paths. 252 backend tests, 41 frontend tests.
+25 tables, 13 migrations. All live on Supabase.**
 
 - **P0** Scaffold both repos, CI, tooling.
 - **P1** Schema (12 migrations), RLS, indexes, seed: 2 outlets, 6 categories,
@@ -258,10 +284,21 @@ Supabase.**
   photo lightbox with signed view URLs, review-depth tracking
   (`run_review_views`), approve/reject with separation of duties, exception
   board with acknowledge/resolve/waive.
+- **P7** The integrity engine (all six checks, with evidence), the three
+  scheduled jobs on an in-process APScheduler, and the advisory AI photo
+  review with its per-outlet reference-photo capture flow. Migration 0013.
+  See D12 for the six choices it forced.
 
-There is **real data** in the system now: several approved and submitted runs,
-photos in storage, one resolved exception. Do not wipe it — it is what makes
-P7 and P8 testable.
+There is **real data** in the system now: 66 runs across four business dates in
+several states, 30 exceptions, 16 job runs, real JPEGs in storage with pHashes,
+one reference standard at New Town, and a run that genuinely carries
+`duplicate_photo`, `too_dark`, `out_of_geofence` and `burst_upload`. Do not
+wipe it — it is what makes P8 testable, and reproducing it takes an hour.
+
+**Two caveats on that data.** The six photos uploaded during P5/P6 are
+262-byte stubs, not decodable images; they will never hash and show as "not
+checked". And business dates 2026-08-25 and 2026-08-28 were materialised by
+hand while testing, so 08-25 is almost entirely `missed`.
 
 ---
 
@@ -288,8 +325,18 @@ I once nearly "fixed" working code because a `fetch` interceptor missed a call
 the database showed had happened.
 
 **When patching a formatted file with a Python string replace, assert the
-anchor matched.** Prettier and ruff reflow lines; a silent no-op patch cost a
-long debugging session in P5.
+anchor matched — and that it matched exactly once.** Prettier and ruff reflow
+lines, so a silent no-op patch cost a long debugging session in P5. Worse, in
+P7 an anchor ending `**audit_ctx,
+    )
+    await db.commit()` matched both
+`start_run` and `submit_run`, and `str.replace` cheerfully edited both. Assert
+`s.count(anchor) == 1`, not `anchor in s`.
+
+**Do not let Prettier near the synced docs.** `HANDOFF.md`, `DECISIONS.md` and
+`STAGE1_SPEC.md` exist in both repos as identical copies. `pnpm format`
+reflowed every markdown table in this file, which would make the two diverge on
+every sync for no reason. `docs` is now in the frontend's `.prettierignore`.
 
 **Heredocs break on nested quotes.** For files containing `'` inside SQL
 strings or f-strings with quotes, use the Write tool, not `cat <<'EOF'`.
@@ -308,131 +355,158 @@ accountability. This is a spec principle and it holds throughout.
 first, English second. Kitchen staff read Bengali. Any new checklist-facing
 field needs a `_bn` counterpart.
 
+**A flag without evidence is an accusation.** P7's version of "warn, never
+block": every integrity flag records *why* in `integrity_detail`, and the UI
+renders that beneath the chip. A red badge a manager cannot check is one they
+learn to ignore, at which point the check may as well not exist. Apply the same
+rule to anything P8 flags.
+
+**Check what is actually in Storage, not what the row says.** The six photos
+uploaded during P5 and P6 have plausible `photo_bytes` values and are 262-byte
+stubs that no decoder will open. The row was not lying; nobody had ever read
+the object back. P7 found this by downloading them, not by reading code.
+
 ---
 
-## 9. NEXT: P7 — Integrity engine, scheduled jobs, AI photo review
+## 9. What P7 actually shipped, and where the edges are
 
-This is the last large epic and it has three distinct parts. Read
-`docs/STAGE1_SPEC.md` section 4.2 and `docs/DECISIONS.md` D6 first.
+Three parts, all live. Read D12 before changing any of it.
 
-### 9.1 Integrity checks (`app/domains/sop/integrity.py`)
+### 9.1 The integrity engine — `app/domains/sop/integrity.py`
 
-Run at photo-confirm and again at submit. Flags are written to
-`checklist_run_items.integrity_flags` (a text array) and counted into
-`checklist_runs.integrity_flag_count`. **Flags never block a submission.**
+All six checks run, and all but one are proven against the live system. Flags
+never block a submission.
 
-| Check | Rule | Flag |
+| Flag | Where it lives | Proven by |
 |---|---|---|
-| Re-used photo | `imagehash.phash` on upload, stored in `photo_phash` (16-char hex). Compare against the last N days for the same `(outlet_id, template_item_id)`; Hamming distance ≤ threshold = match. Record WHICH run it matched so the UI can say so. | `duplicate_photo` |
-| Batch faking | >X% of a run's photos uploaded within Y minutes of `submitted_at`, or a 10+ item run completed in under 90 seconds | `burst_upload` |
-| Off-site | haversine(submit geo, outlet geo) > `geofence_radius_m`. **Missing geolocation is NOT a flag** — `geo_ok` stays null and is counted separately. Already implemented in `runs_service.submit_run`; the flag write is not. | `out_of_geofence` |
-| Late | `submitted_at > due_at + grace_minutes`. Already computed; needs the flag. | `late` |
-| Gallery pick | `photo_uploaded_at` outside `[started_at, submitted_at]` | `stale_capture` |
-| Too dark | Mean luminance below `ai_review.min_luminance`. **Deterministic, not AI.** | `too_dark` |
+| `duplicate_photo` | item | re-uploading the previous day's sink photo through the real tablet flow — matched at Hamming distance 0 and named the run |
+| `too_dark` | item | a luminance-14 photo against the default floor of 40 |
+| `stale_capture` | item | unit tests only; needs a photo confirmed before the run was started |
+| `late` | run | a run submitted 33 hours past due |
+| `out_of_geofence` | run | submitting from central Kolkata, 9km from New Town |
+| `burst_upload` | run | a scripted run that uploaded everything in 36 seconds |
 
-Thresholds come from the settings registry, already defined:
-`integrity.phash_max_distance` (5), `integrity.phash_lookback_days` (30),
-`integrity.burst_window_minutes` (3), `integrity.burst_share` (0.8),
-`ai_review.min_luminance` (40). Resolve them with the `setting_value(key,
-outlet_id, at)` SQL function or a Python helper reading the registry defaults.
+Two failure modes to know about:
 
-**Photo processing must not run inside the request.** Use a FastAPI
-`BackgroundTask` writing to `job_runs` so a failure is visible rather than
-silent. You will need `pillow` and `imagehash` added to `pyproject.toml`.
+- **pHash false positives are what would kill this feature.** A duplicate
+  detector that flags honest work gets switched off, and then nothing is
+  checked at all. There is a test asserting two genuinely different photos of
+  the same station stay well outside the threshold. Keep it.
+- **Photo work never runs in a request.** `confirm-photo` and `submit` hand it
+  to a `BackgroundTask` wrapped in `run_job`, so a storage timeout or a corrupt
+  JPEG lands on `/app/settings/jobs`. An undecodable image raises rather than
+  being swallowed, and the item stays unprocessed — which the review screen
+  shows as "not checked", which is honest.
 
-### 9.2 Scheduled jobs (`app/jobs/`, currently empty)
+`scripts/backfill_photo_integrity.py` hashes photos uploaded before P7. It is
+idempotent and skips already-processed rows unless given `--all`.
 
-APScheduler in-process (single instance for Stage 1). **Every job records
-start/finish/error in `job_runs`** — the table and its read API already exist,
-and `/app/settings/jobs` in the frontend is already built and waiting for rows.
+### 9.2 The scheduled jobs — `app/jobs/`
 
-1. **`materialise_runs`** — 05:00 Asia/Kolkata daily. The logic already exists
-   and is tested (`runs_service.materialise_runs`, idempotent, verified). This
-   is just the schedule wrapper. Time from `jobs.materialise_time`.
-2. **`mark_missed`** — every `jobs.missed_check_minutes` (15). Runs still
-   `pending` past `due_at + grace_minutes` become `missed` and raise a
-   medium-severity `sop_exception`.
-3. **`daily_digest`** — 09:00 IST. Per outlet: yesterday's completion rate,
-   on-time rate, mean score, critical fails, open exceptions, integrity flags,
-   and a random `jobs.digest_spot_check_share` (10%) sample of approved runs
-   flagged for owner spot-check — **use `run_review_views` for the "approved
-   without looking" signal**, which is exactly why that table exists. Rendered
-   as HTML email to owner + ops_manager + that outlet's manager.
+APScheduler on the API's own event loop, started from the lifespan.
+**`SCHEDULER_ENABLED` must be true on exactly one instance.** Two replicas
+would both send the digest and every manager would get it twice. A shared
+advisory lock is the prerequisite for a second instance.
 
-   Use a pluggable `Notifier` interface with `EmailNotifier` and `LogNotifier`.
-   **Do not hardcode email** — WhatsApp is expected in Stage 2 and staff in
-   Indian F&B live on WhatsApp.
+- `materialise_runs` — 05:00 local, from `jobs.materialise_time`.
+- `mark_missed` — every `jobs.missed_check_minutes`. **`pending` only**, never
+  `in_progress`: `missed` is terminal and would discard half-finished work.
+- `daily_digest` — 09:00 local, one `job_runs` row per outlet.
+- `reconcile_schedule` — every 5 minutes, re-reads the two times from settings
+  so an admin editing them does not have to restart the API.
 
-Add `POST /sop/runs/materialise` already exists as the manual trigger; add
-"run now" buttons for the other jobs on the jobs settings page (owner only).
+`POST /jobs/{name}/run` is owner-only and refuses anything outside the three.
+`GET /jobs/schedule` reads the live scheduler rather than recomputing from
+settings, because the question that screen answers is "is this really going to
+run".
 
-### 9.3 AI photo review (D6)
+**The digest does not currently send mail.** No SMTP host is configured, so
+`get_notifier` falls back to `LogNotifier` and records `smtp_not_configured` on
+the `job_runs` row. This is deliberate (D12.6): set `SMTP_HOST` and the rest in
+`.env` and it starts sending with no code change. The seeded accounts are all
+`@akira.test`, which cannot receive mail — testing delivery needs one real
+address.
 
-**Advisory only. It never blocks a submission and never approves a run.**
+### 9.3 AI photo review — `app/domains/sop/ai_review.py`, `app/integrations/vision.py`
 
-Two tables already exist and are empty:
-- `outlet_item_reference_photos` — per-outlet photographic standard for an
-  item, one active per `(outlet_id, template_item_id)`.
-- `run_item_ai_reviews` — verdict (`pass`/`fail`/`uncertain`), confidence,
-  rationale, model, prompt_version, latency. Separate from the run item so a
-  review can be re-run against a newer model without destroying history.
+**`ai_review.enabled` defaults to false, and off means no bytes fetched and no
+request made.** Turn it on per outlet from the settings screen once that
+outlet's reference standards exist.
 
-**Prerequisite that does not exist yet: an admin flow to capture reference
-photos.** Nothing can be compared until New Town's standards are shot under
-service lighting. This was moved into P3a's definition of done but never built
-because the upload pipeline arrived in P5 — that pipeline (`storage.py` signed
-uploads) now exists and should be reused.
+`/app/sop/reference-photos` is the capture flow: one standard per item per
+outlet, camera capture, retired-not-deleted so an old verdict stays readable
+against the photograph it was actually compared to. New Town has **1 of 18**
+captured; every other outlet has none. That is the real remaining work here,
+and it is physical — somebody has to walk the outlet under service lighting.
 
-The pipeline: on photo-confirm, if `ai_review.enabled` for that outlet, queue a
-background task that fetches the submitted photo and that outlet's reference
-photo, asks a vision model whether the task appears done, and writes a
-`run_item_ai_reviews` row. Verdicts below
-`ai_review.uncertain_below_confidence` display as uncertain. A `fail` verdict
-adds the `ai_mismatch` integrity flag — which, like every flag, is advisory.
+**Still unverified: the vision call itself.** There is no `ANTHROPIC_API_KEY`
+on this machine, so no verdict has ever come back from a real model.
+Everything around the call is tested — the confidence threshold, the
+one-directional flag, the reference lookup and its fallback, the unavailable
+path. To finish it: set the key in `.env`, set `ai_review.enabled` true for an
+outlet, submit a photo, then read `run_item_ai_reviews`. The model is
+`claude-sonnet-5` (D12, the owner's decision) and is recorded on every verdict
+alongside a prompt version, so a later re-run against a better model is
+additive rather than a rewrite.
 
-**Before writing any model-calling code, load the `claude-api` skill** for
-current model IDs and the vision API shape. Do not guess model names.
-
-The review UI already renders integrity flags as red chips with plain-language
-tooltips (`FLAG_COPY` in `ReviewDetailPage.tsx`) — `ai_mismatch` copy is
-already written. Add the AI verdict and rationale to that screen.
-
-### 9.4 Definition of done for P7
-
-- 05:00 job creates exactly the right runs for both outlets; re-running creates
-  no duplicates (already proven for the underlying function).
-- An unstarted run past grace flips to `missed` and raises an exception.
-- Re-uploading yesterday's photo produces a visible `duplicate_photo` flag in
-  the review screen, naming the run it matched.
-- pHash does NOT flag two genuinely different photos of the same station.
-- A dark photo flags `too_dark`.
-- Job failures appear in `/app/settings/jobs` rather than vanishing.
-- Reference photos can be captured per outlet through the admin UI.
-- With AI review enabled, a submitted photo gets a verdict + rationale visible
-  to the reviewing manager, and disabling it stops the calls entirely.
+**Before touching any model-calling code, load the `claude-api` skill.** The
+current API shape — `client.messages.parse`, `output_config.effort`, adaptive
+thinking, the model IDs — is not what a training prior will tell you.
 
 ---
 
-## 10. After P7
+## 10. NEXT: P8 — the compliance dashboard
 
-- **P8** Compliance dashboard. `app/core/scoring.py` already has the run-level
-  functions; the outlet-level formula (0.50 mean + 0.30 completion + 0.20
-  on-time, minus penalties, clamped, with the amber cap on unresolved critical
-  failures) is spec section 4.3 and not yet written. The dashboard must render
-  as a four-pillar card with Sales/Inventory/Guest greyed as "Coming in Stage
-  2" so the layout does not change later.
-- **P9** Sales ingestion. Real Petpooja exports are in `C:\Users\KIIT\Downloads`
-  (`Orders_Master_Report_2026_08_25_*.xlsx`, `Item_Sale_Report_Hourly_Wise_*.xlsx`).
-  Totals must reconcile to ₹4,86,076 across 452 orders; a bill at 00:45 on
-  23 Aug must land on business_date 2026-08-22.
+`app/core/scoring.py` already has the run-level functions and they are tested.
+What is missing is the outlet-level formula, spec section 4.3:
+
+```
+outlet SOP score (period) =
+      0.50 x mean(run.score_pct for approved runs)
+    + 0.30 x completion_rate      -- runs approved / runs scheduled
+    + 0.20 x on_time_rate         -- submitted before due+grace / submitted
+    - 2 points per open high-severity exception older than 48h
+    - 1 point per integrity flag per 10 runs
+    (clamped 0-100)
+```
+
+Bands: >=90 green, 75-89 amber, <75 red. **A single unresolved critical failure
+caps the outlet at amber regardless of the arithmetic.**
+
+Three things P7 built that P8 should use rather than rebuild:
+
+- Every weight and band is already in the settings registry, and
+  `app/core/settings_value.py` resolves any of them **at a point in time**.
+  Pass the period's end so scoring a past month uses the weights that were live
+  then (D9). Do not read the registry defaults directly.
+- `checklist_runs.integrity_flag_count` is already run-level flags plus every
+  item-level flag, which is exactly the penalty's input.
+- `app/jobs/digest.py` already computes completion, on-time rate, mean score and
+  open/stale exceptions per outlet per business date. If the dashboard's numbers
+  ever disagree with the digest's, one of them is wrong — consider having the
+  digest call whatever P8 writes.
+
+The dashboard renders as a **four-pillar card with Sales, Inventory and Guest
+greyed as "Coming in Stage 2"**, so the layout does not change later.
+
+### After P8
+
+- **P9** Sales ingestion. Real Petpooja exports are in the user's Downloads
+  folder (`Orders_Master_Report_2026_08_25_*.xlsx`,
+  `Item_Sale_Report_Hourly_Wise_*.xlsx`). Totals must reconcile to
+  Rs 4,86,076 across 452 orders, and a bill at 00:45 on 23 Aug must land on
+  business_date 2026-08-22.
 - **P10** Hardening: security review table, an RLS cross-outlet pytest, N+1
-  audit, realistic 8-week seed dataset, RUNBOOK.md.
+  audit, realistic 8-week seed dataset, RUNBOOK.md. Two pieces of housekeeping
+  belong here too: the 262-byte stub photos left from P5/P6, and the leftover
+  test outlets (AKR-TEST9, AKR-T469, AKR-SL03) that clutter every outlet picker.
 - **Stage 2** starts with the inventory/requisition engine. The user has already
   supplied a real requisition PDF for testing the AI extraction:
   `tests/fixtures/requisition_27aug2026.pdf`. The rule that carries over: **the
   LLM parses and explains; deterministic code decides.**
 
 ---
+
 
 ## 11. Working relationship
 
