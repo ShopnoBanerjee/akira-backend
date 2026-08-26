@@ -2195,6 +2195,633 @@
         }
       }
     },
+    "/sop/runs": {
+      "get": {
+        "tags": [
+          "sop-review"
+        ],
+        "summary": "Runs for review",
+        "description": "Oldest submitted first \u2014 the queue rewards clearing the backlog, and\nbulk approve is deliberately not offered anywhere.",
+        "operationId": "list_runs_sop_runs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outlet_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outlet Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RunStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/QueueRow"
+                  },
+                  "title": "Response List Runs Sop Runs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/runs/{run_id}/detail": {
+      "get": {
+        "tags": [
+          "sop-review"
+        ],
+        "summary": "A run for review, with photo view URLs",
+        "description": "Items with their snapshot definitions, integrity flags, and short-lived\nsigned photo URLs minted per request \u2014 never stored, expired in minutes.",
+        "operationId": "run_detail_sop_runs__run_id__detail_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Run Detail Sop Runs  Run Id  Detail Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/runs/{run_id}/viewed": {
+      "post": {
+        "tags": [
+          "sop-review"
+        ],
+        "summary": "Record that the reviewer opened a photo",
+        "operationId": "mark_viewed_sop_runs__run_id__viewed_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkViewedRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Mark Viewed Sop Runs  Run Id  Viewed Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/runs/{run_id}/approve": {
+      "post": {
+        "tags": [
+          "sop-review"
+        ],
+        "summary": "Approve a run",
+        "description": "Locks the run. Refused when the approver is the submitter \u2014 here, and\nagain by the database CHECK if this code were ever bypassed.",
+        "operationId": "approve_run_sop_runs__run_id__approve_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Approve Run Sop Runs  Run Id  Approve Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/runs/{run_id}/reject": {
+      "post": {
+        "tags": [
+          "sop-review"
+        ],
+        "summary": "Reject a run back to the floor",
+        "description": "Back to in_progress with the reason attached. Clears results on the\nnamed items only \u2014 the rest of the run stays done.",
+        "operationId": "reject_run_sop_runs__run_id__reject_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Reject Run Sop Runs  Run Id  Reject Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/exceptions": {
+      "get": {
+        "tags": [
+          "sop-review"
+        ],
+        "summary": "The exception board",
+        "operationId": "list_exceptions_sop_exceptions_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outlet_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outlet Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExceptionRow"
+                  },
+                  "title": "Response List Exceptions Sop Exceptions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/exceptions/{exception_id}/acknowledge": {
+      "post": {
+        "tags": [
+          "sop-review"
+        ],
+        "summary": "Acknowledge an exception",
+        "operationId": "acknowledge_exception_sop_exceptions__exception_id__acknowledge_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "exception_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Exception Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Acknowledge Exception Sop Exceptions  Exception Id  Acknowledge Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/exceptions/{exception_id}/resolve": {
+      "post": {
+        "tags": [
+          "sop-review"
+        ],
+        "summary": "Resolve an exception",
+        "operationId": "resolve_exception_sop_exceptions__exception_id__resolve_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "exception_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Exception Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Resolve Exception Sop Exceptions  Exception Id  Resolve Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/exceptions/{exception_id}/waive": {
+      "post": {
+        "tags": [
+          "sop-review"
+        ],
+        "summary": "Waive an exception (owner / ops manager)",
+        "description": "Waiving says \"we accept this and are not fixing it\" \u2014 a call above the\noutlet, so it needs the network roles and always a reason.",
+        "operationId": "waive_exception_sop_exceptions__exception_id__waive_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "exception_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Exception Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaiveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Waive Exception Sop Exceptions  Exception Id  Waive Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/sop/categories": {
       "get": {
         "tags": [
@@ -3706,6 +4333,123 @@
         "title": "DeviceSummary",
         "description": "Present only when the caller is a shared outlet tablet."
       },
+      "ExceptionRow": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outlet Id"
+          },
+          "outlet_code": {
+            "type": "string",
+            "title": "Outlet Code"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Business Date"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "photo_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Photo Path"
+          },
+          "assigned_to_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned To Name"
+          },
+          "resolved_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By Name"
+          },
+          "resolution_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution Note"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "age_hours": {
+            "type": "number",
+            "title": "Age Hours"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "outlet_id",
+          "outlet_code",
+          "business_date",
+          "severity",
+          "status",
+          "title",
+          "detail",
+          "photo_path",
+          "assigned_to_name",
+          "resolved_by_name",
+          "resolution_note",
+          "created_at",
+          "age_hours"
+        ],
+        "title": "ExceptionRow"
+      },
       "FloorStaff": {
         "properties": {
           "profile_id": {
@@ -4288,6 +5032,21 @@
         ],
         "title": "JobRun"
       },
+      "MarkViewedRequest": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Item Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id"
+        ],
+        "title": "MarkViewedRequest"
+      },
       "MaterialiseRequest": {
         "properties": {
           "business_date": {
@@ -4649,6 +5408,121 @@
         ],
         "title": "PhotoUrlRequest"
       },
+      "QueueRow": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outlet Id"
+          },
+          "outlet_code": {
+            "type": "string",
+            "title": "Outlet Code"
+          },
+          "template_name": {
+            "type": "string",
+            "title": "Template Name"
+          },
+          "template_name_bn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Name Bn"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Business Date"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "submitted_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted By Name"
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted At"
+          },
+          "score_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score Pct"
+          },
+          "critical_fail_count": {
+            "type": "integer",
+            "title": "Critical Fail Count"
+          },
+          "integrity_flag_count": {
+            "type": "integer",
+            "title": "Integrity Flag Count"
+          },
+          "is_late": {
+            "type": "boolean",
+            "title": "Is Late"
+          },
+          "item_count": {
+            "type": "integer",
+            "title": "Item Count"
+          },
+          "fail_count": {
+            "type": "integer",
+            "title": "Fail Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "outlet_id",
+          "outlet_code",
+          "template_name",
+          "template_name_bn",
+          "business_date",
+          "status",
+          "submitted_by_name",
+          "submitted_at",
+          "score_pct",
+          "critical_fail_count",
+          "integrity_flag_count",
+          "is_late",
+          "item_count",
+          "fail_count"
+        ],
+        "title": "QueueRow"
+      },
       "RegisterDeviceRequest": {
         "properties": {
           "outlet_id": {
@@ -4677,6 +5551,32 @@
         ],
         "title": "RegisterDeviceRequest"
       },
+      "RejectRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 3,
+            "title": "Reason"
+          },
+          "item_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Item Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason",
+          "item_ids"
+        ],
+        "title": "RejectRequest"
+      },
       "ReorderRequest": {
         "properties": {
           "item_ids": {
@@ -4695,6 +5595,34 @@
           "item_ids"
         ],
         "title": "ReorderRequest"
+      },
+      "ResolveRequest": {
+        "properties": {
+          "resolution_note": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 3,
+            "title": "Resolution Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "resolution_note"
+        ],
+        "title": "ResolveRequest"
+      },
+      "RunStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "in_progress",
+          "submitted",
+          "approved",
+          "rejected",
+          "missed"
+        ],
+        "title": "RunStatus"
       },
       "SetLevelRequest": {
         "properties": {
@@ -6151,6 +7079,22 @@
           "time"
         ],
         "title": "ValueType"
+      },
+      "WaiveRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 3,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "WaiveRequest"
       }
     },
     "securitySchemes": {
