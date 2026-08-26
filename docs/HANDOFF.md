@@ -151,6 +151,9 @@ mistake until you know why:
 git diff --cached | grep -E "^\+" | grep -qE "sb_secret_|sk-ant-|eyJ[A-Za-z0-9_-]{30,}" && echo ABORT || echo clean
 ```
 
+(Editing this line will make the scan match itself. Read what it matched
+before believing an ABORT — but always read it.)
+
 `akira-backend/.env` holds (values are IN that file, not here):
 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`,
 `SUPABASE_JWKS_URL`, `DATABASE_URL`, `TEST_DATABASE_URL`, `PHONE_HASH_SALT`.
