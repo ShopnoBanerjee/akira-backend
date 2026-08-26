@@ -8,6 +8,28 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+
+    # The migration tests build a database from zero on every run. That is the
+    # only way to know the migrations actually apply, rather than that some
+    # long-lived database happens to have the right shape.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Never point this at Supabase: the fixtures drop the database they create.
+      TEST_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/postgres
+
     steps:
       - uses: actions/checkout@v4
 
@@ -34,6 +56,12 @@ jobs:
 
       - name: Test
         run: uv run pytest
+
+      - name: Seed generators reproduce their output
+        run: |
+          uv run python scripts/generate_sop_seed.py
+          uv run python scripts/generate_inventory_seed.py
+          git diff --exit-code supabase/seed/ \n            || (echo "::error::A seed file is out of step with its generator." && exit 1)
 
       - name: OpenAPI schema is up to date
         run: |
