@@ -1,0 +1,40 @@
+# Local development stack. Postgres 16 matches the Supabase server version so
+# migrations behave identically here and in the hosted project.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: akira-ops-db
+    environment:
+      POSTGRES_USER: akira
+      POSTGRES_PASSWORD: akira
+      POSTGRES_DB: akira_ops
+      # Postgres runs in UTC. The 05:00 Asia/Kolkata business-date rollover is
+      # expressed in the business_date() function, never in the server timezone.
+      TZ: UTC
+    ports:
+      - "5432:5432"
+    volumes:
+      - akira-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U akira -d akira_ops"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    container_name: akira-ops-api
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://akira:akira@db:5432/akira_ops
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./app:/srv/app:ro
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  akira-db-data:

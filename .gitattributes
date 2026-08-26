@@ -1,0 +1,12 @@
+# Normalise line endings so Windows and CI agree.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.xlsx binary
+*.pdf binary
+
+# Generated — collapse in diffs and exclude from language stats.
+uv.lock linguist-generated=true -diff
+openapi.json linguist-generated=true -diff
