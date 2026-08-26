@@ -28,6 +28,19 @@ DEFAULT_ADMIN_DSN = "postgresql://postgres@127.0.0.1:5433/postgres"
 TEST_DB_NAME = "akira_ops_test"
 
 
+def isolated_settings(**overrides: object):  # type: ignore[no-untyped-def]
+    """Settings built from declared defaults, ignoring the developer's .env.
+
+    A bare Settings() reads that file, so a test asserting a default passes or
+    fails depending on whose machine it runs on. Worse, a locally configured
+    AI_REVIEW_PROVIDER once sent a dispatch test at the real network. Anything
+    in this suite that constructs Settings should come through here.
+    """
+    from app.core.config import Settings
+
+    return Settings(_env_file=None, **overrides)  # type: ignore[arg-type]
+
+
 def admin_dsn() -> str:
     dsn = os.environ.get("TEST_DATABASE_URL", DEFAULT_ADMIN_DSN)
     # Accept a SQLAlchemy-style URL for convenience.

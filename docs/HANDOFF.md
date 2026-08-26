@@ -20,8 +20,8 @@ restaurant group in Kolkata. Stage 1 delivers three things:
 3. **Sales ingestion skeleton** — not built yet (P9).
 
 The governing specification is `docs/STAGE1_SPEC.md` (present in both repos).
-It is the contract. Where this build deviates from it — and it does, in twelve
-places — every deviation is recorded in `docs/DECISIONS.md` as D1–D12 with its
+It is the contract. Where this build deviates from it — and it does, in thirteen
+places — every deviation is recorded in `docs/DECISIONS.md` as D1–D13 with its
 reasoning. **Read DECISIONS.md before proposing any change**; several
 "obvious improvements" are things that were deliberately decided against.
 
@@ -121,7 +121,7 @@ goes through FastAPI, which holds the service role.
 
 ---
 
-## 4. The twelve decisions (D1–D12)
+## 4. The thirteen decisions (D1–D13)
 
 Full text in `docs/DECISIONS.md`. Summary, because each one will look like a
 mistake until you know why:
@@ -138,6 +138,7 @@ mistake until you know why:
 | **D9** | `app_settings` is **append-only with an effective date**. The value in force at a moment is the newest row at-or-before it, outlet override beating global. Historical scores stay reproducible. The registry in `app/core/settings_registry.py` owns each key's type/default/range. |
 | **D10** | Inventory catalogue pulled into Stage 1: ONE shared catalogue, levels per outlet. 151 items seeded from the real count sheets. |
 | **D11** | **Template item versioning.** Any material item edit bumps `checklist_templates.version` AND snapshots every item into `checklist_template_item_versions`, in one transaction. Runs point at the exact version they were answered against, so an admin flipping `is_critical` today cannot retroactively make past runs look like critical failures. |
+| **D13** | **A second vision provider, testing only.** `AI_REVIEW_PROVIDER` picks `anthropic` (default, production) or `groq`. Same prompt, same question, different transport; the model that actually answered is stored on every verdict. Groq's only image-capable model is `qwen/qwen3.8-27b` and its free tier is 8000 TPM, which two photos exhaust — so a 429 is a first-class "no verdict". |
 | **D12** | **What P7 decided for itself.** Six rules, each of which looks arbitrary until you know why: a flag carries its evidence (`integrity_detail`); run-level flags live on the run, not stamped onto each photo; each pass clears only its own flags; `mark_missed` never touches `in_progress`; the AI confidence threshold is applied at READ time and `ai_mismatch` fires in one direction only; notifications degrade **loudly**. Vision model is `claude-sonnet-5` by the owner's decision. |
 
 ---
@@ -166,6 +167,8 @@ P7 added, all optional and all documented in `.env.example`:
 | `SMTP_HOST` / `_PORT` / `_USERNAME` / `_PASSWORD` / `_FROM` / `_STARTTLS` | Unset, so the digest degrades to logging and says so. |
 | `ANTHROPIC_API_KEY` | **Not set.** Without it the AI review records a skip rather than a verdict. |
 | `AI_REVIEW_MODEL` | `claude-sonnet-5` (D12). |
+| `AI_REVIEW_PROVIDER` | `anthropic` by default. Set to `groq` to test without an Anthropic key (D13). |
+| `GROQ_API_KEY` / `GROQ_VISION_MODEL` | Currently set to a Groq key **that must be rotated** — it was pasted into a chat transcript. Model `qwen/qwen3.8-27b`. |
 
 `akira-frontend/.env.local` holds the two `VITE_SUPABASE_*` values (both
 browser-safe) and `VITE_API_BASE_URL`.
@@ -342,7 +345,14 @@ reflowed every markdown table in this file, which would make the two diverge on
 every sync for no reason. `docs` is now in the frontend's `.prettierignore`.
 
 **Heredocs break on nested quotes.** For files containing `'` inside SQL
-strings or f-strings with quotes, use the Write tool, not `cat <<'EOF'`.
+strings or f-strings with quotes, use the Write tool, not `cat <<'EOF'`. This
+bit again in P7 while appending a test file; the shell died on an apostrophe
+inside a docstring and wrote nothing.
+
+**A bare `Settings()` in a test reads the developer's `.env`.** So a test
+asserting a default passes or fails depending on whose machine it runs on, and
+one dispatch test quietly reached the real network once a provider was
+configured locally. Use `tests/conftest.py::isolated_settings`.
 
 **`text()` bind parameters cannot be followed by `::casts`.** `:action::audit_action`
 is a syntax error through SQLAlchemy. Always `cast(:action as audit_action)`.
@@ -442,15 +452,25 @@ against the photograph it was actually compared to. New Town has **1 of 18**
 captured; every other outlet has none. That is the real remaining work here,
 and it is physical — somebody has to walk the outlet under service lighting.
 
-**Still unverified: the vision call itself.** There is no `ANTHROPIC_API_KEY`
-on this machine, so no verdict has ever come back from a real model.
-Everything around the call is tested — the confidence threshold, the
-one-directional flag, the reference lookup and its fallback, the unavailable
-path. To finish it: set the key in `.env`, set `ai_review.enabled` true for an
-outlet, submit a photo, then read `run_item_ai_reviews`. The model is
-`claude-sonnet-5` (D12, the owner's decision) and is recorded on every verdict
-alongside a prompt version, so a later re-run against a better model is
-additive rather than a rewrite.
+**The pipeline is proven end to end against a real model — via Groq, not
+Anthropic** (D13). New Town has `ai_review.enabled` **on**; every other outlet
+is off. What was verified on live data: a grimy sink photo against that
+outlet's own clean standard came back `fail` at confidence 1.0 with the
+rationale *"Surface is covered with scattered dark debris and a large liquid
+stain, clearly unclean compared to the bare reference"*, wrote its
+`run_item_ai_reviews` row, raised `ai_mismatch` on an item staff had recorded
+as a pass, and rendered on the review screen. Turning the setting off produced
+**zero** model calls.
+
+**Still unverified: the Anthropic path specifically.** There is no
+`ANTHROPIC_API_KEY` on this machine. The orchestration around the call is
+identical for both providers and is proven; what has never run is
+`client.messages.parse`. To finish it: set the key, set
+`AI_REVIEW_PROVIDER=anthropic`, and re-review a photo — it will write a second
+row rather than overwrite the Groq one, because the table is keyed on the model.
+
+**Rotate the Groq key in `.env`.** It reached this project through a chat
+transcript.
 
 **Before touching any model-calling code, load the `claude-api` skill.** The
 current API shape — `client.messages.parse`, `output_config.effort`, adaptive

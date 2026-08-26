@@ -11,15 +11,22 @@ Kept separate from `ai_review` so the model call can be swapped, stubbed in a
 test, or re-run against a newer model without touching the orchestration around
 it. `run_item_ai_reviews` records the model and prompt version behind every
 verdict for exactly that reason.
+
+Two providers, one prompt. Anthropic is the production path; Groq exists so the
+pipeline can be exercised end to end on a key that is easier to come by (D13).
+The system prompt and the question are byte-identical between them — only the
+transport differs — so a verdict means the same thing whichever answered, and
+the real model id lands in the row either way.
 """
 
 import base64
 import logging
 import time
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import anthropic
+import httpx
 from anthropic.types import Base64ImageSourceParam, ImageBlockParam, TextBlockParam
 from pydantic import BaseModel, Field
 
@@ -164,7 +171,27 @@ async def review(
     instruction: str | None,
     recorded_result: str,
 ) -> ReviewResult:
-    """Ask the model. Raises VisionUnavailable rather than inventing a verdict."""
+    """Ask the configured provider. Raises VisionUnavailable rather than
+    inventing a verdict — silence is not the same as `uncertain`."""
+    settings = get_settings()
+    ask = _review_groq if settings.AI_REVIEW_PROVIDER == "groq" else _review_anthropic
+    return await ask(
+        submitted=submitted,
+        reference=reference,
+        title=title,
+        instruction=instruction,
+        recorded_result=recorded_result,
+    )
+
+
+async def _review_anthropic(
+    *,
+    submitted: bytes,
+    reference: bytes | None,
+    title: str,
+    instruction: str | None,
+    recorded_result: str,
+) -> ReviewResult:
     settings = get_settings()
     if not settings.ANTHROPIC_API_KEY:
         raise VisionUnavailable(
@@ -222,3 +249,129 @@ async def review(
         latency_ms=int((time.monotonic() - started) * 1000),
         compared_to_reference=reference is not None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Groq — the testing path (D13)
+# ---------------------------------------------------------------------------
+
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+#: The same three fields VisionVerdict declares, as raw JSON Schema. Groq's
+#: OpenAI-compatible endpoint wants the schema inline rather than derived from
+#: a model class, and `strict` makes it a constraint rather than a suggestion.
+_GROQ_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string", "enum": ["pass", "fail", "uncertain"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "rationale": {"type": "string"},
+    },
+    "required": ["verdict", "confidence", "rationale"],
+    "additionalProperties": False,
+}
+
+
+def _groq_image(image_bytes: bytes) -> dict[str, Any]:
+    return {
+        "type": "image_url",
+        "image_url": {
+            "url": f"data:{_media_type(image_bytes)};base64,"
+            + base64.standard_b64encode(image_bytes).decode("ascii")
+        },
+    }
+
+
+async def _review_groq(
+    *,
+    submitted: bytes,
+    reference: bytes | None,
+    title: str,
+    instruction: str | None,
+    recorded_result: str,
+) -> ReviewResult:
+    """Groq's OpenAI-compatible endpoint, over plain httpx.
+
+    No SDK: this is one POST, httpx is already a dependency, and pulling in a
+    second vendor client for a path that exists to prove the pipeline would
+    cost more than it saves.
+    """
+    settings = get_settings()
+    if not settings.GROQ_API_KEY:
+        raise VisionUnavailable("AI_REVIEW_PROVIDER is groq but GROQ_API_KEY is not configured.")
+
+    content: list[dict[str, Any]] = []
+    if reference is not None:
+        content.append(_groq_image(reference))
+    content.append(_groq_image(submitted))
+    content.append(
+        {
+            "type": "text",
+            "text": build_prompt(
+                title=title,
+                instruction=instruction,
+                has_reference=reference is not None,
+                recorded_result=recorded_result,
+            ),
+        }
+    )
+
+    started = time.monotonic()
+    async with httpx.AsyncClient(timeout=90.0) as client:
+        response = await client.post(
+            GROQ_URL,
+            headers={"Authorization": f"Bearer {settings.GROQ_API_KEY}"},
+            json={
+                "model": settings.GROQ_VISION_MODEL,
+                "max_completion_tokens": 1200,
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "photo_verdict",
+                        "schema": _GROQ_SCHEMA,
+                        "strict": True,
+                    },
+                },
+                "messages": [
+                    {"role": "system", "content": SYSTEM},
+                    {"role": "user", "content": content},
+                ],
+            },
+        )
+
+    if response.status_code == 429:
+        # The free tier is 8000 tokens per minute and two photos is most of a
+        # request. A background job that hit the ceiling has not failed — it
+        # simply has no verdict yet, and saying so beats inventing one.
+        raise VisionUnavailable(
+            f"Groq rate limit reached; no verdict this time. {_groq_error(response)}"
+        )
+    if response.status_code >= 400:
+        raise VisionUnavailable(f"Groq returned {response.status_code}: {_groq_error(response)}")
+
+    payload = response.json()
+    try:
+        text_out = payload["choices"][0]["message"]["content"]
+        parsed = VisionVerdict.model_validate_json(text_out)
+    except (KeyError, IndexError, ValueError) as exc:
+        # strict json_schema should make this impossible. If it happens the
+        # honest answer is no verdict, not a guess at what was meant.
+        raise VisionUnavailable(f"Groq returned nothing matching the schema: {exc}") from exc
+
+    return ReviewResult(
+        verdict=parsed.verdict,
+        confidence=parsed.confidence,
+        rationale=parsed.rationale.strip(),
+        # The model that actually answered, not the one that was asked for.
+        model=str(payload.get("model") or settings.GROQ_VISION_MODEL),
+        prompt_version=PROMPT_VERSION,
+        latency_ms=int((time.monotonic() - started) * 1000),
+        compared_to_reference=reference is not None,
+    )
+
+
+def _groq_error(response: "httpx.Response") -> str:
+    try:
+        return str(response.json().get("error", {}).get("message", ""))[:300]
+    except ValueError:
+        return response.text[:300]

@@ -74,6 +74,16 @@ class Settings(BaseSettings):
     # one later is additive rather than a rewrite.
     AI_REVIEW_MODEL: str = "claude-sonnet-5"
 
+    # Which vendor answers. Anthropic is the production path; groq exists so
+    # the pipeline can be exercised end to end on a key that is easier to come
+    # by (D13). The prompt is identical either way and the actual model id is
+    # recorded on every verdict, so the two never get confused for each other.
+    AI_REVIEW_PROVIDER: Literal["anthropic", "groq"] = "anthropic"
+    GROQ_API_KEY: str = ""
+    #: The only image-capable model on Groq's roster, confirmed by asking each
+    #: candidate to describe a picture rather than by reading a table.
+    GROQ_VISION_MODEL: str = "qwen/qwen3.8-27b"
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -341,6 +341,50 @@ raises `UndecodableImage` rather than swallowing it, the failure lands in
 "not checked yet", which is the truth. `scripts/backfill_photo_integrity.py`
 hashes pre-P7 photos and is idempotent.
 
+## D13 — A second vision provider, for testing only
+
+**Decided 27 Aug 2026.** `AI_REVIEW_PROVIDER` selects `anthropic` (default) or
+`groq`. Requested directly: there was no Anthropic key to hand and the point
+was to find out whether the AI pipeline works at all.
+
+**Why this rather than waiting.** Everything between the photo and the
+manager's screen — reference lookup, the confidence threshold, the
+one-directional `ai_mismatch`, the stored row, the review UI — is provider
+agnostic. Leaving it unexercised because one vendor's key was missing would
+have shipped an epic on unit tests alone. What was learned by running it is not
+reproducible from reading: the free tier's 8000 tokens-per-minute ceiling is
+hit by two photos in one request, which is why a 429 is now a first-class
+"no verdict" rather than an error.
+
+**What is deliberately shared, and what is not.** The system prompt and the
+question are byte-identical between providers, so a verdict means the same
+thing whichever answered. Only the transport differs. `run_item_ai_reviews`
+stores the model that *actually* replied — not the one that was asked for —
+and is keyed on `(run_item_id, model, prompt_version)`, so an Anthropic verdict
+and a Groq verdict on the same photo coexist as separate rows rather than
+overwriting each other.
+
+**Groq specifics, all established by probing the live API rather than from
+documentation:** the only image-capable model on the roster is
+`qwen/qwen3.8-27b` — every other model either 400s on an image block or is
+text-only. It accepts two images in one request, which the reference
+comparison depends on, and it honours `response_format: json_schema` with
+`strict`. Called over plain `httpx`; a second vendor SDK for one POST would
+cost more than it saves.
+
+**Anthropic stays the production default** and the default is asserted against
+the *declared* field rather than a constructed `Settings`, because a bare
+`Settings()` reads the developer's `.env`. That is not hypothetical: adding
+`AI_REVIEW_PROVIDER=groq` locally broke a pre-existing test and sent another at
+the real network. `tests/conftest.py::isolated_settings` now builds settings
+from declared defaults, and every test that constructs them goes through it.
+
+**Caveat on the model itself.** Qwen reports extreme confidence — 1.0 and 0.0
+were both observed on real photos. The confidence threshold exists precisely
+because a model's self-reported certainty is not evidence, but it does less
+work when the values are saturated. Treat Groq verdicts as a demonstration that
+the plumbing works, not as a calibrated compliance signal.
+
 ---
 
 ## Assumptions in force — challenge these if wrong

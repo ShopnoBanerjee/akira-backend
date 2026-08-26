@@ -129,11 +129,11 @@ class TestVisionUnavailable:
     ) -> None:
         """Silence from the model is not the same as `uncertain`. Writing a
         row either way would be a fabricated opinion in an audit trail."""
-        from app.core.config import Settings, get_settings
+        from tests.conftest import isolated_settings
 
-        get_settings.cache_clear()
         monkeypatch.setattr(
-            "app.integrations.vision.get_settings", lambda: Settings(ANTHROPIC_API_KEY="")
+            "app.integrations.vision.get_settings",
+            lambda: isolated_settings(ANTHROPIC_API_KEY=""),
         )
         with pytest.raises(vision.VisionUnavailable, match="ANTHROPIC_API_KEY"):
             await vision.review(

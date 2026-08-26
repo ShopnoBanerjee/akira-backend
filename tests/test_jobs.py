@@ -13,10 +13,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from app.core.config import Settings
 from app.jobs import digest as digest_module
 from app.jobs import notify
 from app.jobs.digest import Digest, SpotCheck
+from tests.conftest import isolated_settings
 
 pytestmark = pytest.mark.asyncio
 
@@ -121,17 +121,17 @@ class TestNotifierSelection:
     def test_email_without_a_host_degrades_and_says_why(self) -> None:
         """A digest that silently stopped sending is the failure this whole
         epic exists to prevent."""
-        notifier, reason = notify.get_notifier("email", Settings(SMTP_HOST=""))
+        notifier, reason = notify.get_notifier("email", isolated_settings(SMTP_HOST=""))
         assert isinstance(notifier, notify.LogNotifier)
         assert reason == "smtp_not_configured"
 
     def test_email_with_a_host_uses_smtp(self) -> None:
-        notifier, reason = notify.get_notifier("email", Settings(SMTP_HOST="smtp.example"))
+        notifier, reason = notify.get_notifier("email", isolated_settings(SMTP_HOST="smtp.example"))
         assert isinstance(notifier, notify.EmailNotifier)
         assert reason is None
 
     def test_log_only_is_not_a_downgrade(self) -> None:
-        notifier, reason = notify.get_notifier("log_only", Settings())
+        notifier, reason = notify.get_notifier("log_only", isolated_settings())
         assert isinstance(notifier, notify.LogNotifier)
         assert reason is None
 
@@ -152,7 +152,7 @@ class TestNotifierSelection:
         assert "the numbers" in caplog.text
 
     async def test_email_with_no_recipients_reports_rather_than_sends(self) -> None:
-        result = await notify.EmailNotifier(Settings(SMTP_HOST="smtp.example")).send(
+        result = await notify.EmailNotifier(isolated_settings(SMTP_HOST="smtp.example")).send(
             notify.Notification(subject="s", html="h", text="t", recipients=[])
         )
         assert result == {
@@ -163,9 +163,9 @@ class TestNotifierSelection:
 
     async def test_a_broken_mail_server_is_recorded_not_raised(self) -> None:
         """One outlet's digest failing must not stop the others."""
-        result = await notify.EmailNotifier(Settings(SMTP_HOST="127.0.0.1", SMTP_PORT=1)).send(
-            notify.Notification(subject="s", html="h", text="t", recipients=["a@b.test"])
-        )
+        result = await notify.EmailNotifier(
+            isolated_settings(SMTP_HOST="127.0.0.1", SMTP_PORT=1)
+        ).send(notify.Notification(subject="s", html="h", text="t", recipients=["a@b.test"]))
         assert result["delivered"] is False
         assert result["reason"]
 
