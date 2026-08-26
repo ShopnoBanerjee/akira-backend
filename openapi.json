@@ -1211,7 +1211,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateItemRequest"
+                "$ref": "#/components/schemas/app__domains__inventory__router__UpdateItemRequest"
               }
             }
           }
@@ -1573,6 +1573,748 @@
         }
       }
     },
+    "/sop/categories": {
+      "get": {
+        "tags": [
+          "sop"
+        ],
+        "summary": "SOP categories",
+        "operationId": "list_categories_sop_categories_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Categories Sop Categories Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/sop/templates": {
+      "get": {
+        "tags": [
+          "sop"
+        ],
+        "summary": "Checklist templates",
+        "operationId": "list_templates_sop_templates_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "category_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category Id"
+            }
+          },
+          {
+            "name": "include_inactive",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Include Inactive"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateSummary"
+                  },
+                  "title": "Response List Templates Sop Templates Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "sop"
+        ],
+        "summary": "Create a template",
+        "operationId": "create_template_sop_templates_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTemplateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/templates/{template_id}": {
+      "get": {
+        "tags": [
+          "sop"
+        ],
+        "summary": "One template with its items",
+        "operationId": "get_template_sop_templates__template_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "sop"
+        ],
+        "summary": "Edit template details",
+        "description": "Name, category, frequency, day part, active flag. None of these bumps\nthe version \u2014 only item changes are material.",
+        "operationId": "update_template_sop_templates__template_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTemplateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/templates/{template_id}/duplicate": {
+      "post": {
+        "tags": [
+          "sop"
+        ],
+        "summary": "Duplicate a template",
+        "description": "A fresh version-1 copy, inactive and unassigned, ready to edit.",
+        "operationId": "duplicate_template_sop_templates__template_id__duplicate_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/templates/{template_id}/items": {
+      "post": {
+        "tags": [
+          "sop"
+        ],
+        "summary": "Add an item",
+        "description": "Bumps the template version and snapshots every item, in one transaction.",
+        "operationId": "add_item_sop_templates__template_id__items_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ItemFields"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/templates/{template_id}/items/{item_id}": {
+      "patch": {
+        "tags": [
+          "sop"
+        ],
+        "summary": "Edit an item",
+        "description": "Every field here is material: the edit bumps the version, and runs\nrecorded before it keep rendering the old definition.",
+        "operationId": "update_item_sop_templates__template_id__items__item_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__domains__sop__schemas__UpdateItemRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sop"
+        ],
+        "summary": "Remove an item",
+        "description": "Hard delete only if no run has ever answered against it; otherwise a\nsoft delete that keeps history renderable.",
+        "operationId": "delete_item_sop_templates__template_id__items__item_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/templates/{template_id}/items/reorder": {
+      "put": {
+        "tags": [
+          "sop"
+        ],
+        "summary": "Reorder items",
+        "description": "Takes every current item id in the new order. Partial lists are refused\nrather than silently dropping the forgotten items.",
+        "operationId": "reorder_items_sop_templates__template_id__items_reorder_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/assignments": {
+      "get": {
+        "tags": [
+          "sop"
+        ],
+        "summary": "Template-to-outlet assignments",
+        "operationId": "list_assignments_sop_assignments_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outlet_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outlet Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Assignment"
+                  },
+                  "title": "Response List Assignments Sop Assignments Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "sop"
+        ],
+        "summary": "Assign a template to an outlet",
+        "operationId": "create_assignment_sop_assignments_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAssignmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Assignment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/assignments/{assignment_id}": {
+      "patch": {
+        "tags": [
+          "sop"
+        ],
+        "summary": "Edit an assignment",
+        "operationId": "update_assignment_sop_assignments__assignment_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "assignment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Assignment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAssignmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Assignment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sop"
+        ],
+        "summary": "Remove an assignment",
+        "description": "Soft delete. Runs already materialised from it are untouched; no new\nones are created.",
+        "operationId": "delete_assignment_sop_assignments__assignment_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "assignment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Assignment Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "tags": [
@@ -1624,6 +2366,82 @@
   },
   "components": {
     "schemas": {
+      "Assignment": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "template_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Template Id"
+          },
+          "template_name": {
+            "type": "string",
+            "title": "Template Name"
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outlet Id"
+          },
+          "outlet_code": {
+            "type": "string",
+            "title": "Outlet Code"
+          },
+          "assigned_role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "active_weekdays": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Active Weekdays"
+          },
+          "interval_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval Days"
+          },
+          "due_time_local": {
+            "type": "string",
+            "format": "time",
+            "title": "Due Time Local"
+          },
+          "grace_minutes": {
+            "type": "integer",
+            "title": "Grace Minutes"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "template_id",
+          "template_name",
+          "outlet_id",
+          "outlet_code",
+          "assigned_role",
+          "active_weekdays",
+          "interval_days",
+          "due_time_local",
+          "grace_minutes",
+          "is_active"
+        ],
+        "title": "Assignment"
+      },
       "Category": {
         "properties": {
           "id": {
@@ -1664,6 +2482,125 @@
           "sort_order"
         ],
         "title": "Category"
+      },
+      "CategoryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "label_bn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Bn"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "label",
+          "label_bn",
+          "sort_order",
+          "icon"
+        ],
+        "title": "CategoryOut"
+      },
+      "CreateAssignmentRequest": {
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Template Id"
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outlet Id"
+          },
+          "assigned_role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "active_weekdays": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Active Weekdays",
+            "default": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ]
+          },
+          "interval_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval Days"
+          },
+          "due_time_local": {
+            "type": "string",
+            "format": "time",
+            "title": "Due Time Local"
+          },
+          "grace_minutes": {
+            "type": "integer",
+            "maximum": 480.0,
+            "minimum": 0.0,
+            "title": "Grace Minutes",
+            "default": 30
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "template_id",
+          "outlet_id",
+          "assigned_role",
+          "due_time_local"
+        ],
+        "title": "CreateAssignmentRequest"
       },
       "CreateItemRequest": {
         "properties": {
@@ -1826,6 +2763,70 @@
         ],
         "title": "CreateOutletRequest"
       },
+      "CreateTemplateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "name_bn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Bn"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Category Id"
+          },
+          "frequency": {
+            "$ref": "#/components/schemas/Frequency"
+          },
+          "day_part": {
+            "$ref": "#/components/schemas/DayPart",
+            "default": "any"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "category_id",
+          "frequency"
+        ],
+        "title": "CreateTemplateRequest"
+      },
+      "DayPart": {
+        "type": "string",
+        "enum": [
+          "opening",
+          "mid",
+          "closing",
+          "any"
+        ],
+        "title": "DayPart"
+      },
       "Department": {
         "properties": {
           "id": {
@@ -1956,6 +2957,18 @@
         ],
         "title": "DeviceSummary",
         "description": "Present only when the caller is a shared outlet tablet."
+      },
+      "Frequency": {
+        "type": "string",
+        "enum": [
+          "per_shift",
+          "daily",
+          "alternate_day",
+          "weekly",
+          "fortnightly",
+          "monthly"
+        ],
+        "title": "Frequency"
       },
       "GrantableRolesResponse": {
         "properties": {
@@ -2204,6 +3217,122 @@
           "is_active"
         ],
         "title": "Item"
+      },
+      "ItemFields": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 250,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "title_bn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 250
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title Bn"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "instruction_bn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction Bn"
+          },
+          "requires_photo": {
+            "type": "boolean",
+            "title": "Requires Photo",
+            "default": false
+          },
+          "requires_value": {
+            "type": "boolean",
+            "title": "Requires Value",
+            "default": false
+          },
+          "value_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValueType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Min"
+          },
+          "value_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Max"
+          },
+          "value_unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Unit"
+          },
+          "is_critical": {
+            "type": "boolean",
+            "title": "Is Critical",
+            "default": false
+          },
+          "allow_na": {
+            "type": "boolean",
+            "title": "Allow Na",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "ItemFields"
       },
       "JobRun": {
         "properties": {
@@ -2650,6 +3779,25 @@
         ],
         "title": "RegisterDeviceRequest"
       },
+      "ReorderRequest": {
+        "properties": {
+          "item_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Item Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_ids"
+        ],
+        "title": "ReorderRequest"
+      },
       "SetLevelRequest": {
         "properties": {
           "par_level": {
@@ -2955,6 +4103,424 @@
         "title": "SettingView",
         "description": "One setting as the admin screen shows it: definition plus current value."
       },
+      "TemplateDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "name_bn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Bn"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Category Id"
+          },
+          "category_key": {
+            "type": "string",
+            "title": "Category Key"
+          },
+          "category_label": {
+            "type": "string",
+            "title": "Category Label"
+          },
+          "frequency": {
+            "$ref": "#/components/schemas/Frequency"
+          },
+          "day_part": {
+            "$ref": "#/components/schemas/DayPart"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "item_count": {
+            "type": "integer",
+            "title": "Item Count"
+          },
+          "critical_count": {
+            "type": "integer",
+            "title": "Critical Count"
+          },
+          "assignment_count": {
+            "type": "integer",
+            "title": "Assignment Count"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "name_bn",
+          "description",
+          "category_id",
+          "category_key",
+          "category_label",
+          "frequency",
+          "day_part",
+          "version",
+          "is_active",
+          "item_count",
+          "critical_count",
+          "assignment_count",
+          "items",
+          "warnings"
+        ],
+        "title": "TemplateDetail"
+      },
+      "TemplateItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "title_bn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title Bn"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "instruction_bn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction Bn"
+          },
+          "reference_photo_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Photo Path"
+          },
+          "requires_photo": {
+            "type": "boolean",
+            "title": "Requires Photo"
+          },
+          "requires_value": {
+            "type": "boolean",
+            "title": "Requires Value"
+          },
+          "value_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValueType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Min"
+          },
+          "value_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Max"
+          },
+          "value_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Unit"
+          },
+          "is_critical": {
+            "type": "boolean",
+            "title": "Is Critical"
+          },
+          "allow_na": {
+            "type": "boolean",
+            "title": "Allow Na"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "sort_order",
+          "title",
+          "title_bn",
+          "instruction",
+          "instruction_bn",
+          "reference_photo_path",
+          "requires_photo",
+          "requires_value",
+          "value_type",
+          "value_min",
+          "value_max",
+          "value_unit",
+          "is_critical",
+          "allow_na"
+        ],
+        "title": "TemplateItem"
+      },
+      "TemplateSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "name_bn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Bn"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Category Id"
+          },
+          "category_key": {
+            "type": "string",
+            "title": "Category Key"
+          },
+          "category_label": {
+            "type": "string",
+            "title": "Category Label"
+          },
+          "frequency": {
+            "$ref": "#/components/schemas/Frequency"
+          },
+          "day_part": {
+            "$ref": "#/components/schemas/DayPart"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "item_count": {
+            "type": "integer",
+            "title": "Item Count"
+          },
+          "critical_count": {
+            "type": "integer",
+            "title": "Critical Count"
+          },
+          "assignment_count": {
+            "type": "integer",
+            "title": "Assignment Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "name_bn",
+          "description",
+          "category_id",
+          "category_key",
+          "category_label",
+          "frequency",
+          "day_part",
+          "version",
+          "is_active",
+          "item_count",
+          "critical_count",
+          "assignment_count"
+        ],
+        "title": "TemplateSummary"
+      },
+      "UpdateAssignmentRequest": {
+        "properties": {
+          "assigned_role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRole"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "active_weekdays": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Weekdays"
+          },
+          "interval_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval Days"
+          },
+          "due_time_local": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Time Local"
+          },
+          "grace_minutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 480.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grace Minutes"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UpdateAssignmentRequest"
+      },
       "UpdateDeviceRequest": {
         "properties": {
           "label": {
@@ -2985,83 +4551,6 @@
         "additionalProperties": false,
         "type": "object",
         "title": "UpdateDeviceRequest"
-      },
-      "UpdateItemRequest": {
-        "properties": {
-          "name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          },
-          "name_bn": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name Bn"
-          },
-          "category_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Category Id"
-          },
-          "unit": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/InventoryUnit"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 500
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "is_active": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Active"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "UpdateItemRequest"
       },
       "UpdateMeRequest": {
         "properties": {
@@ -3214,6 +4703,94 @@
         "type": "object",
         "title": "UpdateOutletRequest",
         "description": "Every field optional: a PATCH changes only what it names.\n\n`code` is absent on purpose. It appears in exports, conversation and\nprinted sheets, so renaming it silently would break references nobody is\ntracking."
+      },
+      "UpdateTemplateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "name_bn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Bn"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "frequency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Frequency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "day_part": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DayPart"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UpdateTemplateRequest",
+        "description": "Template-level fields only. None of these is a material change, so none\nbumps the version \u2014 the items are the contract with history, not the\nlabel on the folder."
       },
       "UpdateUserRequest": {
         "properties": {
@@ -3411,6 +4988,238 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "ValueType": {
+        "type": "string",
+        "enum": [
+          "number",
+          "text",
+          "temperature_c",
+          "time"
+        ],
+        "title": "ValueType"
+      },
+      "app__domains__inventory__router__UpdateItemRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "name_bn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Bn"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InventoryUnit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UpdateItemRequest"
+      },
+      "app__domains__sop__schemas__UpdateItemRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 250,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "title_bn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 250
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title Bn"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "instruction_bn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction Bn"
+          },
+          "requires_photo": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires Photo"
+          },
+          "requires_value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires Value"
+          },
+          "value_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValueType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Min"
+          },
+          "value_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Max"
+          },
+          "value_unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Unit"
+          },
+          "is_critical": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Critical"
+          },
+          "allow_na": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Na"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UpdateItemRequest",
+        "description": "Partial edit. Every field here is material (D11): changing any of them\nbumps the template version so history keeps rendering what was true."
       }
     },
     "securitySchemes": {

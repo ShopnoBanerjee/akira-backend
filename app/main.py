@@ -20,6 +20,7 @@ from app.domains.inventory.router import router as inventory_router
 from app.domains.jobs.router import router as jobs_router
 from app.domains.outlets.router import router as outlets_router
 from app.domains.settings.router import router as settings_router
+from app.domains.sop.router import router as sop_router
 from app.domains.users.router import router as users_router
 
 logging.basicConfig(level=logging.INFO)
@@ -60,6 +61,7 @@ app.include_router(devices_router)
 app.include_router(inventory_router)
 app.include_router(settings_router)
 app.include_router(jobs_router)
+app.include_router(sop_router)
 
 
 @app.get("/healthz", tags=["meta"])
