@@ -32,7 +32,7 @@ from app.domains.sop.schemas import (
     TemplateDetail,
     TemplateItem,
     TemplateSummary,
-    UpdateItemRequest,
+    UpdateTemplateItemRequest,
     UpdateTemplateRequest,
 )
 
@@ -390,7 +390,7 @@ async def update_item(
     user: CurrentUser,
     template_id: uuid.UUID,
     item_id: uuid.UUID,
-    payload: UpdateItemRequest,
+    payload: UpdateTemplateItemRequest,
     **audit_ctx: Any,
 ) -> TemplateDetail:
     before = (

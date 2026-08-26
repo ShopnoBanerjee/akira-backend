@@ -110,7 +110,7 @@ class ItemFields(BaseModel):
         return self
 
 
-class UpdateItemRequest(BaseModel):
+class UpdateTemplateItemRequest(BaseModel):
     """Partial edit. Every field here is material (D11): changing any of them
     bumps the template version so history keeps rendering what was true."""
 

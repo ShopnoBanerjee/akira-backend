@@ -22,7 +22,7 @@ from app.domains.sop.schemas import (
     TemplateDetail,
     TemplateSummary,
     UpdateAssignmentRequest,
-    UpdateItemRequest,
+    UpdateTemplateItemRequest,
     UpdateTemplateRequest,
 )
 
@@ -152,7 +152,7 @@ async def add_item(
 async def update_item(
     template_id: uuid.UUID,
     item_id: uuid.UUID,
-    payload: UpdateItemRequest,
+    payload: UpdateTemplateItemRequest,
     request: Request,
     db: DbDep,
     user: CurrentUserDep,

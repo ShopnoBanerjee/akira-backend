@@ -8,7 +8,6 @@ and every past run that failed it retroactively looks like a critical failure.
 import uuid
 from typing import Any
 
-import asyncpg
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
@@ -18,7 +17,7 @@ from app.domains.sop import service
 from app.domains.sop.schemas import (
     ItemFields,
     ReorderRequest,
-    UpdateItemRequest,
+    UpdateTemplateItemRequest,
     UpdateTemplateRequest,
 )
 
@@ -77,8 +76,8 @@ async def _make_template(db: AsyncSession) -> Any:
 
     await _seed_owner_profile(db)
     category_id = (await db.execute(text("select id from sop_categories limit 1"))).scalar_one()
-    from app.domains.sop.schemas import CreateTemplateRequest
     from app.core.enums import DayPart, Frequency
+    from app.domains.sop.schemas import CreateTemplateRequest
 
     detail = await service.create_template(
         db,
@@ -138,7 +137,7 @@ class TestMaterialEditsBump:
             owner(),
             template.id,
             item.id,
-            UpdateItemRequest(is_critical=True, requires_photo=True),
+            UpdateTemplateItemRequest(is_critical=True, requires_photo=True),
         )
         assert edited.version == 3
         assert edited.items[0].is_critical is True

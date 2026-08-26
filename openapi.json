@@ -1211,7 +1211,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__domains__inventory__router__UpdateItemRequest"
+                "$ref": "#/components/schemas/UpdateItemRequest"
               }
             }
           }
@@ -1969,7 +1969,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__domains__sop__schemas__UpdateItemRequest"
+                "$ref": "#/components/schemas/UpdateTemplateItemRequest"
               }
             }
           }
@@ -4552,6 +4552,83 @@
         "type": "object",
         "title": "UpdateDeviceRequest"
       },
+      "UpdateItemRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "name_bn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Bn"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InventoryUnit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UpdateItemRequest"
+      },
       "UpdateMeRequest": {
         "properties": {
           "full_name": {
@@ -4703,6 +4780,151 @@
         "type": "object",
         "title": "UpdateOutletRequest",
         "description": "Every field optional: a PATCH changes only what it names.\n\n`code` is absent on purpose. It appears in exports, conversation and\nprinted sheets, so renaming it silently would break references nobody is\ntracking."
+      },
+      "UpdateTemplateItemRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 250,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "title_bn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 250
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title Bn"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "instruction_bn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction Bn"
+          },
+          "requires_photo": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires Photo"
+          },
+          "requires_value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires Value"
+          },
+          "value_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValueType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Min"
+          },
+          "value_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Max"
+          },
+          "value_unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Unit"
+          },
+          "is_critical": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Critical"
+          },
+          "allow_na": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Na"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UpdateTemplateItemRequest",
+        "description": "Partial edit. Every field here is material (D11): changing any of them\nbumps the template version so history keeps rendering what was true."
       },
       "UpdateTemplateRequest": {
         "properties": {
@@ -4998,228 +5220,6 @@
           "time"
         ],
         "title": "ValueType"
-      },
-      "app__domains__inventory__router__UpdateItemRequest": {
-        "properties": {
-          "name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          },
-          "name_bn": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name Bn"
-          },
-          "category_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Category Id"
-          },
-          "unit": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/InventoryUnit"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 500
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "is_active": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Active"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "UpdateItemRequest"
-      },
-      "app__domains__sop__schemas__UpdateItemRequest": {
-        "properties": {
-          "title": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 250,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
-          },
-          "title_bn": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 250
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title Bn"
-          },
-          "instruction": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 1000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Instruction"
-          },
-          "instruction_bn": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 1000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Instruction Bn"
-          },
-          "requires_photo": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Requires Photo"
-          },
-          "requires_value": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Requires Value"
-          },
-          "value_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ValueType"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "value_min": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Value Min"
-          },
-          "value_max": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Value Max"
-          },
-          "value_unit": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 20
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Value Unit"
-          },
-          "is_critical": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Critical"
-          },
-          "allow_na": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Allow Na"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "UpdateItemRequest",
-        "description": "Partial edit. Every field here is material (D11): changing any of them\nbumps the template version so history keeps rendering what was true."
       }
     },
     "securitySchemes": {
