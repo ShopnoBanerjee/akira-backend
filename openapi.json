@@ -2908,6 +2908,235 @@
         }
       }
     },
+    "/sop/reference-photos": {
+      "get": {
+        "tags": [
+          "sop-reference-photos"
+        ],
+        "summary": "Reference standards for an outlet, including the ones not captured yet",
+        "description": "Every photo-requiring item, with its standard attached if one exists.\n\nListing the gaps is the whole job. A screen that showed only what has been\ncaptured would make an outlet with two standards look finished.",
+        "operationId": "list_reference_photos_sop_reference_photos_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outlet_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Outlet Id"
+            }
+          },
+          {
+            "name": "template_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "missing_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Missing Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReferencePhoto"
+                  },
+                  "title": "Response List Reference Photos Sop Reference Photos Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "sop-reference-photos"
+        ],
+        "summary": "Set an outlet's reference standard for an item",
+        "description": "Confirms the object exists, retires the previous standard, and records\nthe new one. The luminance measurement runs afterwards: a standard shot in\na dark room would make every honest submission look bright by comparison,\nso the number is captured for the same reason submissions are measured.",
+        "operationId": "set_reference_photo_sop_reference_photos_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmReferenceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Set Reference Photo Sop Reference Photos Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/reference-photos/upload-url": {
+      "post": {
+        "tags": [
+          "sop-reference-photos"
+        ],
+        "summary": "Get an upload URL for a reference standard",
+        "operationId": "reference_upload_url_sop_reference_photos_upload_url_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Reference Upload Url Sop Reference Photos Upload Url Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/sop/reference-photos/{reference_id}": {
+      "delete": {
+        "tags": [
+          "sop-reference-photos"
+        ],
+        "summary": "Retire a reference standard",
+        "operationId": "retire_reference_photo_sop_reference_photos__reference_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "reference_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Reference Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Retire Reference Photo Sop Reference Photos  Reference Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/sop/categories": {
       "get": {
         "tags": [
@@ -3996,6 +4225,58 @@
           "icon"
         ],
         "title": "CategoryOut"
+      },
+      "ConfirmReferenceRequest": {
+        "properties": {
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outlet Id"
+          },
+          "template_item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Template Item Id"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "caption": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption"
+          },
+          "caption_bn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption Bn"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "outlet_id",
+          "template_item_id",
+          "path"
+        ],
+        "title": "ConfirmReferenceRequest"
       },
       "CreateAssignmentRequest": {
         "properties": {
@@ -5608,6 +5889,200 @@
           "fail_count"
         ],
         "title": "QueueRow"
+      },
+      "ReferencePhoto": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "template_item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Template Item Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "title_bn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title Bn"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "requires_photo": {
+            "type": "boolean",
+            "title": "Requires Photo"
+          },
+          "is_critical": {
+            "type": "boolean",
+            "title": "Is Critical"
+          },
+          "template_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Template Id"
+          },
+          "template_name": {
+            "type": "string",
+            "title": "Template Name"
+          },
+          "photo_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Photo Path"
+          },
+          "photo_view_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Photo View Url"
+          },
+          "caption": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption"
+          },
+          "caption_bn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption Bn"
+          },
+          "luminance_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Luminance Mean"
+          },
+          "captured_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured By Name"
+          },
+          "captured_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "template_item_id",
+          "title",
+          "title_bn",
+          "instruction",
+          "requires_photo",
+          "is_critical",
+          "template_id",
+          "template_name",
+          "photo_path",
+          "photo_view_url",
+          "caption",
+          "caption_bn",
+          "luminance_mean",
+          "captured_by_name",
+          "captured_at"
+        ],
+        "title": "ReferencePhoto"
+      },
+      "ReferenceUploadRequest": {
+        "properties": {
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outlet Id"
+          },
+          "template_item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Template Item Id"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          },
+          "byte_size": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Byte Size"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "outlet_id",
+          "template_item_id",
+          "content_type",
+          "byte_size"
+        ],
+        "title": "ReferenceUploadRequest"
       },
       "RegisterDeviceRequest": {
         "properties": {

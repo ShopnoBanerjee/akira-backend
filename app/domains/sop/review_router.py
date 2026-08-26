@@ -19,6 +19,7 @@ from app.core.audit import record
 from app.core.deps import CurrentUser, CurrentUserDep, DbDep, require_management
 from app.core.enums import APPROVER_ROLES, AuditAction, RunStatus
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError
+from app.domains.sop import ai_review
 from app.integrations import storage
 
 router = APIRouter(prefix="/sop", tags=["sop-review"])
@@ -258,9 +259,15 @@ async def run_detail(run_id: uuid.UUID, db: DbDep, user: CurrentUserDep) -> dict
         )
     }
 
+    # Advisory verdicts, threshold already applied. Attached per item so the
+    # manager sees the opinion beside the photo it is about, never as a
+    # separate screen they would have to go and look for.
+    verdicts = await ai_review.latest_for_run(db, run_id)
+
     for item in items:
         item["viewed_by_me"] = item["id"] in viewed
         item["integrity_detail"] = _as_dict(item["integrity_detail"])
+        item["ai_review"] = verdicts.get(item["id"])
         if item["photo_path"]:
             item["photo_view_url"] = await storage.create_signed_view_url(
                 item["photo_path"], expires_in=300

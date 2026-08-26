@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     # Advisory only. Absent, ai_review.enabled has nothing to call and the
     # review job records that rather than failing.
     ANTHROPIC_API_KEY: str = ""
-    AI_REVIEW_MODEL: str = "claude-sonnet-5"
+    AI_REVIEW_MODEL: str = "claude-opus-5"
 
 
 @lru_cache

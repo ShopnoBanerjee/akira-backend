@@ -205,7 +205,7 @@ def completed_implausibly_fast(
 # ---------------------------------------------------------------------------
 
 
-async def _merge_flags(
+async def merge_flags(
     db: AsyncSession,
     *,
     table: str,
@@ -376,7 +376,7 @@ async def process_photo(db: AsyncSession, run_item_id: uuid.UUID) -> PhotoResult
         ),
         {"id": run_item_id, "phash": photo_hash, "luminance": luminance},
     )
-    flags = await _merge_flags(
+    flags = await merge_flags(
         db,
         table="checklist_run_items",
         row_id=run_item_id,
@@ -552,7 +552,7 @@ async def evaluate_run(db: AsyncSession, run_id: uuid.UUID) -> list[str]:
                 "implausibly_fast": too_fast,
             }
 
-    flags = await _merge_flags(
+    flags = await merge_flags(
         db,
         table="checklist_runs",
         row_id=run_id,
@@ -591,6 +591,12 @@ async def background_photo_pass(
         ).scalar_one()
         run_flags = await evaluate_run(db, uuid.UUID(str(run_id)))
         await db.commit()
+
+        # Advisory, and last: a model call must never be able to lose the
+        # deterministic result that has already been committed above.
+        from app.domains.sop import ai_review
+
+        ai = await ai_review.review_photo_if_enabled(db, run_item_id)
         return {
             "run_item_id": str(run_item_id),
             "phash": result.phash,
@@ -598,6 +604,7 @@ async def background_photo_pass(
             "item_flags": result.flags,
             "run_flags": run_flags,
             "evidence": result.detail,
+            **({"ai_review": ai} if ai else {}),
         }
 
     from app.jobs.runner import run_job
@@ -641,10 +648,15 @@ async def background_run_pass(
             processed.append({"run_item_id": str(item_id), "flags": result.flags})
         run_flags = await evaluate_run(db, run_id)
         await db.commit()
+
+        from app.domains.sop import ai_review
+
+        reviews = await ai_review.review_run_if_enabled(db, run_id)
         return {
             "run_id": str(run_id),
             "photos_caught_up": processed,
             "run_flags": run_flags,
+            **({"ai_reviews": reviews} if reviews else {}),
         }
 
     from app.jobs.runner import run_job

@@ -20,6 +20,7 @@ from app.domains.inventory.router import router as inventory_router
 from app.domains.jobs.router import router as jobs_router
 from app.domains.outlets.router import router as outlets_router
 from app.domains.settings.router import router as settings_router
+from app.domains.sop.reference_router import router as reference_router
 from app.domains.sop.review_router import router as review_router
 from app.domains.sop.router import router as sop_router
 from app.domains.sop.runs_router import floor_router, runs_router
@@ -71,6 +72,7 @@ app.include_router(jobs_router)
 # runs_router first: /sop/runs/... must match before /sop's own routes.
 app.include_router(runs_router)
 app.include_router(review_router)
+app.include_router(reference_router)
 app.include_router(sop_router)
 app.include_router(floor_router)
 
