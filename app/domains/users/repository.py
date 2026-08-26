@@ -58,3 +58,210 @@ async def update_profile(
 
 async def touch_last_seen(db: AsyncSession, profile_id: uuid.UUID) -> None:
     await db.execute(_TOUCH_LAST_SEEN, {"profile_id": profile_id})
+
+
+_LIST_USERS = """
+    select p.id as profile_id, p.full_name, p.phone, p.employee_code,
+           p.global_role, p.is_active, p.last_seen_at,
+           p.pin_hash is not null as has_pin
+      from profiles p
+     where p.deleted_at is null
+"""
+
+
+async def list_users(
+    db: AsyncSession,
+    *,
+    outlet_ids: list[uuid.UUID] | None,
+    role: str | None,
+    is_active: bool | None,
+    search: str | None,
+) -> list[dict[str, Any]]:
+    """outlet_ids None means every outlet — only for owner and ops_manager."""
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+
+    if outlet_ids is not None:
+        clauses.append(
+            "exists (select 1 from outlet_members m"
+            " where m.profile_id = p.id and m.deleted_at is null"
+            "   and m.outlet_id = any(:outlet_ids))"
+        )
+        params["outlet_ids"] = outlet_ids
+    if role is not None:
+        clauses.append("p.global_role = cast(:role as user_role)")
+        params["role"] = role
+    if is_active is not None:
+        clauses.append("p.is_active = :is_active")
+        params["is_active"] = is_active
+    if search:
+        clauses.append("(p.full_name ilike :search or coalesce(p.employee_code,'') ilike :search)")
+        params["search"] = f"%{search}%"
+
+    sql = _LIST_USERS + ("".join(f" and {c}" for c in clauses)) + " order by p.full_name"
+    return [dict(r) for r in (await db.execute(text(sql), params)).mappings()]
+
+
+async def memberships_for(
+    db: AsyncSession, profile_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[dict[str, Any]]]:
+    """Loaded in one query for the whole page, rather than per row."""
+    if not profile_ids:
+        return {}
+    rows = (
+        await db.execute(
+            text(
+                """
+                select m.profile_id, m.outlet_id, o.code, o.name,
+                       m.role_at_outlet, m.is_primary
+                  from outlet_members m
+                  join outlets o on o.id = m.outlet_id
+                 where m.profile_id = any(:ids)
+                   and m.deleted_at is null
+                   and o.deleted_at is null
+                 order by m.is_primary desc, o.code
+                """
+            ),
+            {"ids": profile_ids},
+        )
+    ).mappings()
+    grouped: dict[uuid.UUID, list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(row["profile_id"], []).append(dict(row))
+    return grouped
+
+
+async def get_user(db: AsyncSession, profile_id: uuid.UUID) -> dict[str, Any] | None:
+    row = (
+        (await db.execute(text(_LIST_USERS + " and p.id = :id"), {"id": profile_id}))
+        .mappings()
+        .first()
+    )
+    return dict(row) if row else None
+
+
+async def outlet_ids_for(db: AsyncSession, profile_id: uuid.UUID) -> set[uuid.UUID]:
+    rows = await db.execute(
+        text("select outlet_id from outlet_members where profile_id = :id and deleted_at is null"),
+        {"id": profile_id},
+    )
+    return {r[0] for r in rows}
+
+
+async def upsert_profile(
+    db: AsyncSession,
+    profile_id: uuid.UUID,
+    *,
+    full_name: str,
+    global_role: str,
+    employee_code: str | None,
+    phone: str | None,
+) -> None:
+    await db.execute(
+        text(
+            """
+            insert into profiles
+                (id, full_name, global_role, employee_code, phone, is_active)
+            values (:id, :full_name, cast(:global_role as user_role), :employee_code, :phone, true)
+            on conflict (id) do update set
+                full_name     = excluded.full_name,
+                global_role   = excluded.global_role,
+                employee_code = coalesce(excluded.employee_code, profiles.employee_code),
+                phone         = coalesce(excluded.phone, profiles.phone),
+                is_active     = true,
+                deleted_at    = null
+            """
+        ),
+        {
+            "id": profile_id,
+            "full_name": full_name,
+            "global_role": global_role,
+            "employee_code": employee_code,
+            "phone": phone,
+        },
+    )
+
+
+async def patch_profile(db: AsyncSession, profile_id: uuid.UUID, changes: dict[str, Any]) -> None:
+    if not changes:
+        return
+    assignments = ", ".join(f"{c} = :{c}" for c in changes)
+    await db.execute(
+        text(f"update profiles set {assignments} where id = :id and deleted_at is null"),
+        {**changes, "id": profile_id},
+    )
+
+
+async def set_role(db: AsyncSession, profile_id: uuid.UUID, role: str) -> None:
+    await db.execute(
+        text("update profiles set global_role = cast(:role as user_role) where id = :id"),
+        {"id": profile_id, "role": role},
+    )
+
+
+async def set_pin_hash(db: AsyncSession, profile_id: uuid.UUID, pin_hash: str | None) -> None:
+    await db.execute(
+        text(
+            """
+            update profiles
+               set pin_hash = cast(:pin_hash as text),
+                   pin_set_at = case when cast(:pin_hash as text) is null
+                                     then null else now() end,
+                   pin_failed_attempts = 0,
+                   pin_locked_until = null
+             where id = :id
+            """
+        ),
+        {"id": profile_id, "pin_hash": pin_hash},
+    )
+
+
+async def replace_memberships(
+    db: AsyncSession, profile_id: uuid.UUID, outlet_ids: list[uuid.UUID], role: str
+) -> None:
+    """Soft-deletes what is gone and restores what is back, so a person
+    returning to an outlet keeps their original membership row."""
+    await db.execute(
+        text(
+            "update outlet_members set deleted_at = now()"
+            " where profile_id = :id and deleted_at is null"
+            + (" and not (outlet_id = any(:keep))" if outlet_ids else "")
+        ),
+        {"id": profile_id, **({"keep": outlet_ids} if outlet_ids else {})},
+    )
+    for index, outlet_id in enumerate(outlet_ids):
+        await db.execute(
+            text(
+                """
+                insert into outlet_members
+                    (outlet_id, profile_id, role_at_outlet, is_primary)
+                values (:outlet_id, :profile_id, cast(:role as user_role), :is_primary)
+                on conflict (outlet_id, profile_id) do update set
+                    role_at_outlet = excluded.role_at_outlet,
+                    is_primary     = excluded.is_primary,
+                    deleted_at     = null
+                """
+            ),
+            {
+                "outlet_id": outlet_id,
+                "profile_id": profile_id,
+                "role": role,
+                "is_primary": index == 0,
+            },
+        )
+
+
+async def count_other_owners(db: AsyncSession, excluding: uuid.UUID) -> int:
+    """Used to refuse removing the last owner, which would lock everyone out of
+    outlet and user administration permanently."""
+    count = (
+        await db.execute(
+            text(
+                "select count(*) from profiles"
+                " where global_role = 'owner' and is_active and deleted_at is null"
+                "   and id <> :id"
+            ),
+            {"id": excluding},
+        )
+    ).scalar_one()
+    return int(count)

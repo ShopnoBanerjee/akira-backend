@@ -24,7 +24,7 @@ _INSERT = text(
         (actor_profile_id, outlet_id, entity_table, entity_id, action,
          before, after, ip, user_agent)
     values
-        (:actor_profile_id, :outlet_id, :entity_table, :entity_id, :action::audit_action,
+        (:actor_profile_id, :outlet_id, :entity_table, :entity_id, cast(:action as audit_action),
          cast(:before as jsonb), cast(:after as jsonb), cast(:ip as inet), :user_agent)
     """
 )

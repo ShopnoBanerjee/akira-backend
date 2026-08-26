@@ -20,6 +20,7 @@ dependencies = [
     # Staff PINs for the shared tablet. Argon2 rather than bcrypt because a
     # 4-digit PIN has almost no entropy, so the hash must be expensive.
     "argon2-cffi>=23.1.0",
+    "email-validator>=2.3.0",
 ]
 
 [dependency-groups]

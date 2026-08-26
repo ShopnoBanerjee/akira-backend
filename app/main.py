@@ -15,6 +15,7 @@ from sqlalchemy import text
 from app.core.config import get_settings
 from app.core.db import dispose_engine, get_engine
 from app.core.errors import register_error_handlers
+from app.domains.devices.router import router as devices_router
 from app.domains.outlets.router import router as outlets_router
 from app.domains.users.router import router as users_router
 
@@ -52,6 +53,7 @@ register_error_handlers(app)
 
 app.include_router(users_router)
 app.include_router(outlets_router)
+app.include_router(devices_router)
 
 
 @app.get("/healthz", tags=["meta"])
