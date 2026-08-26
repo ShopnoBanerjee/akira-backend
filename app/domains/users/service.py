@@ -55,6 +55,27 @@ def _to_me(user: CurrentUser, profile: dict[str, Any]) -> MeResponse:
 
 
 async def get_me(db: AsyncSession, user: CurrentUser) -> MeResponse:
+    if user.device is not None:
+        # A shared tablet: no profile of its own. The client sees device mode
+        # and shows the PIN screen; a person appears only after /floor/identify.
+        return MeResponse(
+            profile_id=user.profile_id,
+            full_name=user.device.label,
+            email=user.email,
+            phone=None,
+            employee_code=None,
+            global_role=UserRole.STAFF,
+            is_active=True,
+            is_management=False,
+            is_global=False,
+            has_pin=False,
+            outlets=[],
+            device=DeviceSummary(
+                device_id=user.device.device_id,
+                outlet_id=user.device.outlet_id,
+                label=user.device.label,
+            ),
+        )
     profile = await repository.get_profile(db, user.profile_id)
     if profile is None:
         raise NotFoundError("Your profile could not be found.")

@@ -1573,6 +1573,628 @@
         }
       }
     },
+    "/sop/runs/today": {
+      "get": {
+        "tags": [
+          "sop-runs"
+        ],
+        "summary": "Today's runs for an outlet",
+        "description": "Scoped by role: staff see staff runs, shift leads see floor runs,\nmanagers see everything at the outlet. 'Today' is the business date \u2014\nat 1am this still returns the evening's checklists.",
+        "operationId": "today_sop_runs_today_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outlet_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Outlet Id"
+            }
+          },
+          {
+            "name": "X-Actor-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required on shared-tablet sessions: the assertion from /floor/identify.",
+              "title": "X-Actor-Token"
+            },
+            "description": "Required on shared-tablet sessions: the assertion from /floor/identify."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Today Sop Runs Today Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/runs/materialise": {
+      "post": {
+        "tags": [
+          "sop-runs"
+        ],
+        "summary": "Create today's runs now",
+        "description": "Manual trigger for the 05:00 job (which arrives in the integrity epic).\nIdempotent \u2014 re-running creates nothing twice.",
+        "operationId": "materialise_sop_runs_materialise_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaterialiseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "type": "object",
+                  "title": "Response Materialise Sop Runs Materialise Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/sop/runs/{run_id}": {
+      "get": {
+        "tags": [
+          "sop-runs"
+        ],
+        "summary": "One run with its items",
+        "description": "Items carry the snapshot definitions they will be answered against \u2014\nthe version that was live when the run was created, not today's.",
+        "operationId": "get_run_sop_runs__run_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "X-Actor-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required on shared-tablet sessions: the assertion from /floor/identify.",
+              "title": "X-Actor-Token"
+            },
+            "description": "Required on shared-tablet sessions: the assertion from /floor/identify."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Run Sop Runs  Run Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/runs/{run_id}/start": {
+      "post": {
+        "tags": [
+          "sop-runs"
+        ],
+        "summary": "Start a run",
+        "operationId": "start_sop_runs__run_id__start_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "X-Actor-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required on shared-tablet sessions: the assertion from /floor/identify.",
+              "title": "X-Actor-Token"
+            },
+            "description": "Required on shared-tablet sessions: the assertion from /floor/identify."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Start Sop Runs  Run Id  Start Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/runs/{run_id}/items/{item_id}": {
+      "patch": {
+        "tags": [
+          "sop-runs"
+        ],
+        "summary": "Answer an item",
+        "description": "Last write wins, and identical retries are naturally idempotent \u2014 the\noffline queue can safely replay this after a dropped response.",
+        "operationId": "answer_sop_runs__run_id__items__item_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "X-Actor-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required on shared-tablet sessions: the assertion from /floor/identify.",
+              "title": "X-Actor-Token"
+            },
+            "description": "Required on shared-tablet sessions: the assertion from /floor/identify."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerItemRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Answer Sop Runs  Run Id  Items  Item Id  Patch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/runs/{run_id}/items/{item_id}/photo-url": {
+      "post": {
+        "tags": [
+          "sop-runs"
+        ],
+        "summary": "Get a photo upload URL",
+        "description": "A signed grant for one exact object path, minted here so the client\nnever chooses where its bytes land.",
+        "operationId": "photo_url_sop_runs__run_id__items__item_id__photo_url_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "X-Actor-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required on shared-tablet sessions: the assertion from /floor/identify.",
+              "title": "X-Actor-Token"
+            },
+            "description": "Required on shared-tablet sessions: the assertion from /floor/identify."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotoUrlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Photo Url Sop Runs  Run Id  Items  Item Id  Photo Url Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/runs/{run_id}/items/{item_id}/photo-confirm": {
+      "post": {
+        "tags": [
+          "sop-runs"
+        ],
+        "summary": "Confirm an uploaded photo",
+        "description": "Verifies the object exists in storage, then writes the metadata. Never\nthe other way round.",
+        "operationId": "photo_confirm_sop_runs__run_id__items__item_id__photo_confirm_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "X-Actor-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required on shared-tablet sessions: the assertion from /floor/identify.",
+              "title": "X-Actor-Token"
+            },
+            "description": "Required on shared-tablet sessions: the assertion from /floor/identify."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotoConfirmRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Photo Confirm Sop Runs  Run Id  Items  Item Id  Photo Confirm Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sop/runs/{run_id}/submit": {
+      "post": {
+        "tags": [
+          "sop-runs"
+        ],
+        "summary": "Submit a run",
+        "description": "Validates completeness (422 lists the offending items), computes the\nscore, late-ness and geofence, raises an exception per critical fail, and\nlocks the run into 'submitted'. Denied geolocation is not a flag \u2014 submit\nproceeds and geo_ok stays null.",
+        "operationId": "submit_sop_runs__run_id__submit_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "X-Actor-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required on shared-tablet sessions: the assertion from /floor/identify.",
+              "title": "X-Actor-Token"
+            },
+            "description": "Required on shared-tablet sessions: the assertion from /floor/identify."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Submit Sop Runs  Run Id  Submit Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/sop/categories": {
       "get": {
         "tags": [
@@ -2315,6 +2937,84 @@
         }
       }
     },
+    "/floor/staff": {
+      "get": {
+        "tags": [
+          "floor"
+        ],
+        "summary": "Who can identify on this tablet",
+        "description": "The PIN-pad picker: floor staff of the tablet's outlet. Only meaningful\non a device session; an individual login is already somebody.",
+        "operationId": "list_floor_staff_floor_staff_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FloorStaff"
+                  },
+                  "type": "array",
+                  "title": "Response List Floor Staff Floor Staff Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/floor/identify": {
+      "post": {
+        "tags": [
+          "floor"
+        ],
+        "summary": "Enter your PIN",
+        "description": "Turns a device session plus a correct PIN into a short-lived actor\nassertion. Five wrong attempts lock the PIN for five minutes. Every\nfailure is audited.\n\nThe assertion authorises floor actions only. It can never approve a run\nand never reaches the management shell.",
+        "operationId": "identify_floor_identify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentifyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/healthz": {
       "get": {
         "tags": [
@@ -2366,6 +3066,54 @@
   },
   "components": {
     "schemas": {
+      "AnswerItemRequest": {
+        "properties": {
+          "result": {
+            "$ref": "#/components/schemas/ItemResult"
+          },
+          "value_numeric": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Numeric"
+          },
+          "value_text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Text"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "title": "AnswerItemRequest"
+      },
       "Assignment": {
         "properties": {
           "id": {
@@ -2958,6 +3706,35 @@
         "title": "DeviceSummary",
         "description": "Present only when the caller is a shared outlet tablet."
       },
+      "FloorStaff": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Profile Id"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "has_pin": {
+            "type": "boolean",
+            "title": "Has Pin"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "full_name",
+          "role",
+          "has_pin"
+        ],
+        "title": "FloorStaff"
+      },
       "Frequency": {
         "type": "string",
         "enum": [
@@ -3015,6 +3792,62 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "IdentifyRequest": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Profile Id"
+          },
+          "pin": {
+            "type": "string",
+            "maxLength": 8,
+            "minLength": 4,
+            "title": "Pin"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profile_id",
+          "pin"
+        ],
+        "title": "IdentifyRequest"
+      },
+      "IdentifyResponse": {
+        "properties": {
+          "actor_token": {
+            "type": "string",
+            "title": "Actor Token"
+          },
+          "expires_at": {
+            "type": "integer",
+            "title": "Expires At"
+          },
+          "profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Profile Id"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "actor_token",
+          "expires_at",
+          "profile_id",
+          "full_name",
+          "role"
+        ],
+        "title": "IdentifyResponse"
       },
       "InventoryUnit": {
         "type": "string",
@@ -3334,6 +4167,16 @@
         ],
         "title": "ItemFields"
       },
+      "ItemResult": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "na",
+          "pending"
+        ],
+        "title": "ItemResult"
+      },
       "JobRun": {
         "properties": {
           "id": {
@@ -3444,6 +4287,25 @@
           "triggered_by_name"
         ],
         "title": "JobRun"
+      },
+      "MaterialiseRequest": {
+        "properties": {
+          "business_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Date"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "MaterialiseRequest"
       },
       "MeResponse": {
         "properties": {
@@ -3750,6 +4612,42 @@
           "is_primary"
         ],
         "title": "OutletSummary"
+      },
+      "PhotoConfirmRequest": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "PhotoConfirmRequest"
+      },
+      "PhotoUrlRequest": {
+        "properties": {
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          },
+          "byte_size": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Byte Size"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content_type",
+          "byte_size"
+        ],
+        "title": "PhotoUrlRequest"
       },
       "RegisterDeviceRequest": {
         "properties": {
@@ -4102,6 +5000,39 @@
         ],
         "title": "SettingView",
         "description": "One setting as the admin screen shows it: definition plus current value."
+      },
+      "SubmitRequest": {
+        "properties": {
+          "geo_lat": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 90.0,
+                "minimum": -90.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geo Lat"
+          },
+          "geo_lng": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 180.0,
+                "minimum": -180.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geo Lng"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SubmitRequest"
       },
       "TemplateDetail": {
         "properties": {

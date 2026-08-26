@@ -154,12 +154,21 @@ async def current_user(
 
     if row is None:
         if device is not None:
-            # A tablet has no profile of its own. It is a valid caller, but it
-            # is nobody until a staff PIN says who is using it.
-            raise PendingActivationError(
-                "This tablet is registered but no one has signed in on it yet.",
-                extra={"outlet_id": str(device.outlet_id), "device": device.label},
+            # A tablet has no profile of its own. It is a valid caller — the
+            # floor endpoints accept it and then demand a staff PIN before any
+            # action is attributed to a person. Its pseudo-role is staff, so
+            # every management guard rejects it.
+            user = CurrentUser(
+                profile_id=device.device_id,
+                full_name=device.label,
+                email=claims.email,
+                global_role=UserRole.STAFF,
+                is_active=True,
+                memberships=[],
+                device=device,
             )
+            request.state.current_user = user
+            return user
         # Authenticated with no profile: a self-signup. Give them a dormant
         # profile so an admin can find and activate them, but no access.
         await db.execute(
