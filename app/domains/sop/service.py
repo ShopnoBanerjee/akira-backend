@@ -542,11 +542,21 @@ async def reorder_items(
             },
         )
 
-    for position, moved_id in enumerate(requested, start=1):
-        await db.execute(
-            text("update checklist_template_items set sort_order = :position where id = :id"),
-            {"position": position, "id": moved_id},
-        )
+    # One statement, not a loop. Row-by-row updates acquire row locks in list
+    # order, and two concurrent reorders then deadlock against each other
+    # (observed live). A single UPDATE takes its locks in one scan order.
+    await db.execute(
+        text(
+            """
+            update checklist_template_items i
+               set sort_order = v.position
+              from (select unnest(cast(:ids as uuid[])) as id,
+                           generate_series(1, cardinality(cast(:ids as uuid[]))) as position) v
+             where i.id = v.id
+            """
+        ),
+        {"ids": requested},
+    )
 
     version = await _bump_and_snapshot(db, template_id, user.profile_id, "Reordered items")
     await record(
