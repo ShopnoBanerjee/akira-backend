@@ -174,7 +174,10 @@ async def review(
     """Ask the configured provider. Raises VisionUnavailable rather than
     inventing a verdict — silence is not the same as `uncertain`."""
     settings = get_settings()
-    ask = _review_groq if settings.AI_REVIEW_PROVIDER == "groq" else _review_anthropic
+    ask = {
+        "groq": _review_groq,
+        "gemini": _review_gemini,
+    }.get(settings.AI_REVIEW_PROVIDER, _review_anthropic)
     return await ask(
         submitted=submitted,
         reference=reference,
@@ -254,6 +257,93 @@ async def _review_anthropic(
 # ---------------------------------------------------------------------------
 # Groq — the testing path (D13)
 # ---------------------------------------------------------------------------
+
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
+async def _review_gemini(
+    *,
+    submitted: bytes,
+    reference: bytes | None,
+    title: str,
+    instruction: str | None,
+    recorded_result: str,
+) -> ReviewResult:
+    """Same system prompt, same question, Gemini transport. The free tier's
+    daily quota covers an outlet's photo volume with room to spare, which is
+    what pushed review off the squeezed Groq tier."""
+    import asyncio as _asyncio
+
+    settings = get_settings()
+    if not settings.GEMINI_API_KEY:
+        raise VisionUnavailable("GEMINI_API_KEY is not configured.")
+
+    def _part(image: bytes) -> dict[str, Any]:
+        return {
+            "inline_data": {
+                "mime_type": _media_type(image),
+                "data": base64.b64encode(image).decode(),
+            }
+        }
+
+    # Reference first, submitted second — the prompt names them in that order,
+    # and swapping them silently inverts every comparison.
+    parts: list[dict[str, Any]] = []
+    if reference is not None:
+        parts.append(_part(reference))
+    parts.append(_part(submitted))
+    parts.append(
+        {
+            "text": SYSTEM
+            + "\n\n"
+            + build_prompt(
+                title=title,
+                instruction=instruction,
+                recorded_result=recorded_result,
+                has_reference=reference is not None,
+            )
+        }
+    )
+    body = {
+        "contents": [{"parts": parts}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "responseJsonSchema": VisionVerdict.model_json_schema(),
+            "temperature": 0,
+        },
+    }
+    started = time.monotonic()
+    async with httpx.AsyncClient(timeout=120) as client:
+        for attempt in range(3):
+            response = await client.post(
+                f"{GEMINI_URL}/{settings.GEMINI_MODEL}:generateContent",
+                headers={"x-goog-api-key": settings.GEMINI_API_KEY},
+                json=body,
+            )
+            if response.status_code not in (429, 503):
+                break
+            await _asyncio.sleep(15 * (attempt + 1))
+    if response.status_code != 200:
+        raise VisionUnavailable(
+            f"Gemini refused the review: {response.status_code} {response.text[:200]}"
+        )
+    latency = int((time.monotonic() - started) * 1000)
+    payload = response.json()
+    try:
+        text = payload["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError) as exc:
+        raise VisionUnavailable(f"Gemini returned no verdict: {exc}") from exc
+    verdict = VisionVerdict.model_validate_json(text)
+    return ReviewResult(
+        verdict=verdict.verdict,
+        confidence=verdict.confidence,
+        rationale=verdict.rationale,
+        model=settings.GEMINI_MODEL,
+        prompt_version=PROMPT_VERSION,
+        latency_ms=latency,
+        compared_to_reference=reference is not None,
+    )
+
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 

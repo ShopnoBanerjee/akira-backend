@@ -298,7 +298,12 @@ async def extract_count(db: AsyncSession, count_id: uuid.UUID) -> dict[str, Any]
 
     from app.core.config import get_settings
 
-    groq_extractor = get_settings().STOCK_EXTRACT_PROVIDER == "groq"
+    # Trust is per provider, set by measurement (see sheet_extraction.py):
+    # groq shifts rows silently, so everything it says is review-bound. The
+    # others are gated by what the PARSER refused plus low extraction
+    # confidence — gemini reports a flat confidence, so its gate is
+    # effectively the parser, which is the deterministic one anyway.
+    force_review = get_settings().STOCK_EXTRACT_PROVIDER == "groq"
 
     inserted = 0
     needs_review_count = 0
@@ -342,7 +347,7 @@ async def extract_count(db: AsyncSession, count_id: uuid.UUID) -> dict[str, Any]
                         refused = True
 
             needs_review = (
-                groq_extractor
+                force_review
                 or match is None
                 or match.method == "fuzzy"
                 or refused

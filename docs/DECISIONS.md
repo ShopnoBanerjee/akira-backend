@@ -653,6 +653,60 @@ the same reason: the evidence outlives the conclusion.
 
 ---
 
+## D18 — Gemini is the AI provider, decided by a golden set, not a preference
+
+The Anthropic key is off the table for now (budget). The replacement was
+chosen the way D17 demands: measured. `tests/fixtures/golden_page1.json` is a
+human's reading of the real sheet's page 1 — 60 handwritten cells, with
+genuinely ambiguous cells carrying every faithful transcription instead of a
+pretended certainty — and `scripts/eval_extractor.py` scores any provider
+against it. The numbers that decided:
+
+| provider | cell accuracy | row-shift errors | blank fidelity |
+|---|---|---|---|
+| gemini-3-flash-preview | **60/60 (100%)** | **0** | **32/32** |
+| qwen3.8-27b (groq) | 50/60 (83%) | 6 | 30/32 |
+
+Row-shift errors are the metric that matters most: a wrong value that is a
+NEIGHBOUR's right value corrupts a requisition silently. Groq produced six;
+Gemini produced none — including the Ginger-500/Potato-1.500 pair that was
+Groq's signature failure.
+
+**The free tier fits the business.** A single outlet is ~20-30 requests a day
+against a ~1,500/day quota. Photo review moved to Gemini in the same pass
+(same SYSTEM prompt, same question, third transport in vision.py) and its
+first live verdict was honest: it called a synthetic test photo "a digital
+graphic, not a photo of the floor". The accepted trade, named out loud:
+free-tier requests may be used by Google for training. Count sheets are
+ingredient names and quantities — no customer data. The sales exports would
+be a different conversation, and they do not go to Gemini.
+
+**Trust policy is per provider.** groq lines are force-reviewed (measured row
+shifts are invisible to any confidence threshold). gemini reports a flat,
+non-discriminating confidence, so its gate is the deterministic parser —
+compounds, unit mismatches and unknown names still stop for a human, which
+is where the stopping logic belonged all along. The prompt now also forces
+compound cells ("1kg 7pc") to be transcribed whole, turning the one Gemini
+soft spot into parser refusals.
+
+**No agent framework.** Every model call here is a single-shot, stateless
+transformation — image to JSON, photo to verdict. There is no loop for an
+agent framework to own; FastAPI + job_runs + deterministic Python already
+are the orchestrator, and that is why every number traces to paper. ADK (or
+any agent kit) becomes interesting only if a multi-turn manager copilot is
+built — a Stage 4 idea, parked.
+
+**stub is the fourth provider.** It replays a committed fixture with one of
+everything the pipeline must handle, so the full extraction contract runs in
+CI and keyless local dev. Keys decide which model answers; they never decide
+whether the pipeline is testable.
+
+The Gemini key arrived through a chat transcript, like the Groq key before
+it: both need rotation from their consoles. Both live only in gitignored
+.env. The secret scan gains the AQ. prefix.
+
+---
+
 ## Assumptions in force — challenge these if wrong
 
 - **A1 — `ops_manager` approves outlet-manager submissions.** Spec open question

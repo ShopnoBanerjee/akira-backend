@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     # the pipeline can be exercised end to end on a key that is easier to come
     # by (D13). The prompt is identical either way and the actual model id is
     # recorded on every verdict, so the two never get confused for each other.
-    AI_REVIEW_PROVIDER: Literal["anthropic", "groq"] = "anthropic"
+    AI_REVIEW_PROVIDER: Literal["anthropic", "gemini", "groq"] = "anthropic"
     GROQ_API_KEY: str = ""
 
     # --- Stage 2: stock sheet extraction -------------------------------------
@@ -86,8 +86,19 @@ class Settings(BaseSettings):
     # visual task where the Groq fallback measurably fails (values shift onto
     # neighbouring rows at high confidence). groq stays usable for exercising
     # the pipeline; everything it extracts is forced into human review.
-    STOCK_EXTRACT_PROVIDER: Literal["anthropic", "groq"] = "anthropic"
+    # gemini is the production extractor: measured on the real sheet it
+    # row-aligns correctly (the Groq failure) and preserves handwriting
+    # verbatim, and the free tier covers a single outlet ~60x over. stub
+    # replays a fixture so the pipeline is testable with no key at all.
+    STOCK_EXTRACT_PROVIDER: Literal["anthropic", "gemini", "groq", "stub"] = "gemini"
     STOCK_EXTRACT_MODEL: str = "claude-opus-5"
+
+    # --- Google AI (Gemini) --------------------------------------------------
+    GEMINI_API_KEY: str = ""
+    #: gemini-3-flash-preview leads OCR benchmarks and is what the extraction
+    #: was measured on. Pinned rather than -latest so a silent model swap
+    #: cannot change extraction behaviour under us.
+    GEMINI_MODEL: str = "gemini-3-flash-preview"
     #: The only image-capable model on Groq's roster, confirmed by asking each
     #: candidate to describe a picture rather than by reading a table.
     GROQ_VISION_MODEL: str = "qwen/qwen3.8-27b"

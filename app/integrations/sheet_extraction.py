@@ -7,13 +7,19 @@ per cell with a confidence — never a mapped item, never a normalised number.
 as an unmatched or refused row a human reviews, not a wrong number in a
 requisition.
 
-Two providers, one contract. The Anthropic path is the production one:
-row-alignment on handwritten sheets is exactly the kind of visual task where
-the measured difference is decisive — the Groq path (tested against the real
-27 Aug sheet) shifted handwritten values onto neighbouring rows at 0.9
-confidence, which is the one failure mode this pipeline cannot tolerate
-quietly. It stays as the plumbing-test fallback, and everything it produces
-is forced into review (see counts_service).
+Providers, one contract, chosen by measurement against the real 27 Aug sheet:
+
+- **gemini** (production): row-aligns correctly — including the Ginger-500 /
+  Potato-1.500 neighbour pair that broke Groq — and preserves handwriting
+  verbatim ("1.500", "2.800", "5pk" untouched). Its confidence is flat and
+  non-discriminating, so the review gate leans on the PARSER's refusals
+  (compounds, unit mismatches) rather than the model's self-assessment.
+- **anthropic**: kept wired; unfunded for now (budget), so unexercised.
+- **groq**: the measured failure — values shifted onto neighbouring rows at
+  0.9 confidence. Plumbing-test fallback only; everything it produces is
+  forced into review (see counts_service).
+- **stub**: replays a committed fixture, so the whole pipeline runs in CI and
+  local dev with no key and no network.
 
 The sheets are printed FROM the catalogue, so the prompt carries the
 catalogue's item vocabulary. That anchors printed-name transcription (the
@@ -100,6 +106,8 @@ columns at the right: Physical Closing Count, then Requisition Qty Need.
 You are a transcriber, not an interpreter:
 - Copy handwriting EXACTLY as written: "1.500" stays "1.500", "1kg" stays \
 "1kg", "5pk" stays "5pk". Never convert units or normalise numbers.
+- When one cell holds several numbers or units ("1kg 7pc", "150 100"), \
+transcribe ALL of it, verbatim, in one string. Never pick one part.
 - A blank cell is null. Never write 0 for a blank — a circled zero is a \
 count, a blank is the absence of one, and the kitchen means different \
 things by them.
@@ -134,8 +142,12 @@ async def extract_page(
     no provider is reachable — the job records that as a failure, it is never
     written as an empty count."""
     settings = get_settings()
+    if settings.STOCK_EXTRACT_PROVIDER == "gemini":
+        return await _extract_gemini(image_bytes, vocabulary=vocabulary)
     if settings.STOCK_EXTRACT_PROVIDER == "groq":
         return await _extract_groq(image_bytes, vocabulary=vocabulary)
+    if settings.STOCK_EXTRACT_PROVIDER == "stub":
+        return _extract_stub()
     return await _extract_anthropic(image_bytes, vocabulary=vocabulary)
 
 
@@ -184,6 +196,100 @@ async def _extract_anthropic(image_bytes: bytes, *, vocabulary: list[str]) -> Pa
         model=settings.STOCK_EXTRACT_MODEL,
         extractor_version=EXTRACTOR_VERSION,
         latency_ms=latency,
+    )
+
+
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
+async def _extract_gemini(image_bytes: bytes, *, vocabulary: list[str]) -> PageResult:
+    """REST generateContent with a JSON schema constraint.
+
+    REST rather than the google-genai SDK: one httpx call matches how every
+    other provider in this codebase is spoken to, adds no dependency, and the
+    shape was verified against the live API before this was written.
+    """
+    settings = get_settings()
+    if not settings.GEMINI_API_KEY:
+        raise VisionUnavailable("GEMINI_API_KEY is not configured.")
+
+    schema = ExtractedPage.model_json_schema()
+    body = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "inline_data": {
+                            "mime_type": _media_type(image_bytes),
+                            "data": base64.b64encode(image_bytes).decode(),
+                        }
+                    },
+                    {"text": SYSTEM + "\n\n" + build_prompt(vocabulary)},
+                ]
+            }
+        ],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "responseJsonSchema": schema,
+            "temperature": 0,
+        },
+    }
+    started = time.monotonic()
+    async with httpx.AsyncClient(timeout=240) as client:
+        # The preview model rides demand spikes (503) and the free tier rate
+        # limits (429). Both are temporary by definition; waiting them out IS
+        # the policy, same as the Groq branch.
+        for attempt in range(4):
+            response = await client.post(
+                f"{GEMINI_URL}/{settings.GEMINI_MODEL}:generateContent",
+                headers={"x-goog-api-key": settings.GEMINI_API_KEY},
+                json=body,
+            )
+            if response.status_code not in (429, 503):
+                break
+            wait = 15 * (attempt + 1)
+            logger.info(
+                "gemini %s; waiting %ds (attempt %d)", response.status_code, wait, attempt + 1
+            )
+            await asyncio.sleep(wait)
+    if response.status_code != 200:
+        raise VisionUnavailable(
+            f"Gemini refused the extraction: {response.status_code} {response.text[:200]}"
+        )
+    latency = int((time.monotonic() - started) * 1000)
+    payload = response.json()
+    try:
+        text = payload["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError) as exc:
+        raise VisionUnavailable(f"Gemini returned no transcription: {exc}") from exc
+    page = ExtractedPage.model_validate_json(text)
+    return PageResult(
+        page=page,
+        model=settings.GEMINI_MODEL,
+        extractor_version=EXTRACTOR_VERSION,
+        latency_ms=latency,
+    )
+
+
+#: Loaded once; the stub is a committed fixture so tests and keyless local
+#: runs exercise the full pipeline deterministically.
+_STUB_PATH = "tests/fixtures/stub_extraction.json"
+_stub_cache: ExtractedPage | None = None
+
+
+def _extract_stub() -> PageResult:
+    global _stub_cache
+    if _stub_cache is None:
+        from pathlib import Path
+
+        _stub_cache = ExtractedPage.model_validate_json(
+            Path(_STUB_PATH).read_text(encoding="utf-8")
+        )
+    return PageResult(
+        page=_stub_cache,
+        model="stub",
+        extractor_version=EXTRACTOR_VERSION,
+        latency_ms=0,
     )
 
 

@@ -269,6 +269,24 @@ class TestExtractionPipeline:
         assert EXTRACTOR_VERSION in header["extractor"]
 
 
+class TestStubProvider:
+    def test_the_stub_replays_its_fixture_without_any_key(self) -> None:
+        """CI and keyless local runs exercise the full extraction contract
+        through this. The fixture deliberately contains one of everything the
+        pipeline must handle: a thousands-dot, a compound, a unit mismatch, a
+        blank, and an unknown item."""
+        from app.integrations.sheet_extraction import _extract_stub
+
+        result = _extract_stub()
+        assert result.model == "stub"
+        names = [row.item_name for row in result.page.rows]
+        assert "Ginger" in names and "Mystery Sauce" in names
+        ginger = next(r for r in result.page.rows if r.item_name == "Ginger")
+        assert ginger.closing_count_raw == "1.500"  # verbatim survives the fixture
+        compound = next(r for r in result.page.rows if r.item_name == "Button Mushroom")
+        assert compound.closing_count_raw == "1kg 7pc"
+
+
 class TestReviewAndConfirm:
     async def test_resolving_a_line_can_remember_the_spelling(self, session: AsyncSession) -> None:
         outlet = await _outlet(session)

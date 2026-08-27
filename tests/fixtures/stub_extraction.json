@@ -1,0 +1,55 @@
+{
+  "sheet_date": "2026-01-15",
+  "counted_at_label": "3 PM",
+  "rows": [
+    {
+      "sl_no": 1,
+      "item_name": "Sweet Corn",
+      "closing_count_raw": "800",
+      "requisition_raw": null,
+      "confidence": 0.95
+    },
+    {
+      "sl_no": 2,
+      "item_name": "Ginger",
+      "closing_count_raw": "1.500",
+      "requisition_raw": "3kg",
+      "confidence": 0.95
+    },
+    {
+      "sl_no": 3,
+      "item_name": "Bokchoy",
+      "closing_count_raw": "0",
+      "requisition_raw": "1kg",
+      "confidence": 0.9
+    },
+    {
+      "sl_no": 4,
+      "item_name": "Button Mushroom",
+      "closing_count_raw": "1kg 7pc",
+      "requisition_raw": null,
+      "confidence": 0.55
+    },
+    {
+      "sl_no": 5,
+      "item_name": "Chilli Powder",
+      "closing_count_raw": "5pk",
+      "requisition_raw": null,
+      "confidence": 0.9
+    },
+    {
+      "sl_no": 6,
+      "item_name": "Karela",
+      "closing_count_raw": null,
+      "requisition_raw": null,
+      "confidence": 1.0
+    },
+    {
+      "sl_no": 7,
+      "item_name": "Mystery Sauce",
+      "closing_count_raw": "2",
+      "requisition_raw": null,
+      "confidence": 0.4
+    }
+  ]
+}
