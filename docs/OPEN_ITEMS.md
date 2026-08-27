@@ -8,7 +8,7 @@ are deciding what to pick up.
 This is not a bug list. Nothing here is broken; broken things get fixed, not
 filed. It is the set of deliberate gaps, and it should shrink.
 
-Last reviewed: 27 Aug 2026, after P8.
+Last reviewed: 27 Aug 2026, after P9a.
 
 **Keep it honest.** When you close one, delete the entry rather than marking it
 done — the file is only useful if everything in it is still true. When you open
@@ -73,6 +73,27 @@ service lighting, at `/app/sop/reference-photos`. The screen lists what is
 still missing and shows the measured brightness of each standard so one shot in
 a dark storeroom is visible as such. This is a physical job; no amount of code
 shortens it.
+
+---
+
+## Waiting on a report Petpooja may not produce
+
+### Item-level sales are not ingested
+
+`sales_order_items` is empty and P9 does not fill it. No Petpooja item export
+carries a bill number — Item Sale Report (hourly), Item Report Day Wise, Item
+Wise Sales and Highest Selling Items were all checked, and every one is
+pre-aggregated. There is nothing to hang `order_id` on (D15).
+
+Nothing in Stage 1 reads the table. The Sales pillar of the health card is
+Stage 2, and it needs bill-level totals, which `sales_orders` has.
+
+**Unblocked by:** finding out whether this Petpooja plan can export an
+order-wise or bill-wise item report. If it can, that is a second adapter beside
+`petpooja.orders.v1` and a straightforward one. If it cannot, the decision to
+make later is whether item-level analysis is worth relaxing `order_id` and
+storing period aggregates under a table whose name would stop describing its
+contents.
 
 ---
 

@@ -1811,6 +1811,369 @@
         }
       }
     },
+    "/sales/uploads": {
+      "post": {
+        "tags": [
+          "sales"
+        ],
+        "summary": "Upload a Petpooja export",
+        "description": "Accepts an Orders Master Report .xlsx and parses it in the background.\n\nThe outlet is chosen here rather than read from the file: a Petpooja export\nnames only the restaurant, so two outlets produce indistinguishable files.\n\nRe-sending a file already ingested returns the original upload untouched \u2014\nidempotency is on the bytes, not the filename, which carries an export\ntimestamp and changes every time.",
+        "operationId": "upload_export_sales_uploads_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_export_sales_uploads_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Upload Export Sales Uploads Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "sales"
+        ],
+        "summary": "Uploads and how they parsed",
+        "description": "Newest first, each carrying its warnings. A parser that dropped rows\nsilently would be a parser nobody could trust, so what it skipped travels\nwith the upload.",
+        "operationId": "list_uploads_sales_uploads_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outlet_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outlet Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UploadRow"
+                  },
+                  "title": "Response List Uploads Sales Uploads Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sales/uploads/{upload_id}/reparse": {
+      "post": {
+        "tags": [
+          "sales"
+        ],
+        "summary": "Parse a stored file again",
+        "description": "Re-read the stored original \u2014 after an adapter version bump, or after\nfixing whatever made it fail. The file is kept precisely so nobody has to\ngo back to Petpooja and export it again.",
+        "operationId": "reparse_sales_uploads__upload_id__reparse_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "upload_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Upload Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Reparse Sales Uploads  Upload Id  Reparse Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sales/orders": {
+      "get": {
+        "tags": [
+          "sales"
+        ],
+        "summary": "Ingested bills",
+        "description": "Grouped and filtered by `business_date`, never by the calendar date \u2014\na bill at 00:45 belongs to the night before.",
+        "operationId": "list_orders_sales_orders_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outlet_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outlet Id"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OrderRow"
+                  },
+                  "title": "Response List Orders Sales Orders Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sales/daily": {
+      "get": {
+        "tags": [
+          "sales"
+        ],
+        "summary": "Net sales per trading day",
+        "description": "What the Stage 2 sales pillar will read. Here now because it is the\ncheapest way to see whether an ingest landed on the days it should.",
+        "operationId": "daily_sales_daily_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outlet_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Outlet Id"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DailyTotal"
+                  },
+                  "title": "Response Daily Sales Daily Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/sop/runs/today": {
       "get": {
         "tags": [
@@ -4284,6 +4647,26 @@
         ],
         "title": "Assignment"
       },
+      "Body_upload_export_sales_uploads_post": {
+        "properties": {
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outlet Id"
+          },
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outlet_id",
+          "file"
+        ],
+        "title": "Body_upload_export_sales_uploads_post"
+      },
       "Category": {
         "properties": {
           "id": {
@@ -4710,6 +5093,35 @@
           "frequency"
         ],
         "title": "CreateTemplateRequest"
+      },
+      "DailyTotal": {
+        "properties": {
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Business Date"
+          },
+          "bills": {
+            "type": "integer",
+            "title": "Bills"
+          },
+          "net_paise": {
+            "type": "integer",
+            "title": "Net Paise"
+          },
+          "covers": {
+            "type": "integer",
+            "title": "Covers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "business_date",
+          "bills",
+          "net_paise",
+          "covers"
+        ],
+        "title": "DailyTotal"
       },
       "DayPart": {
         "type": "string",
@@ -5681,6 +6093,121 @@
           "outlets"
         ],
         "title": "MeResponse"
+      },
+      "OrderRow": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outlet Id"
+          },
+          "outlet_code": {
+            "type": "string",
+            "title": "Outlet Code"
+          },
+          "external_bill_no": {
+            "type": "string",
+            "title": "External Bill No"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Business Date"
+          },
+          "ordered_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ordered At"
+          },
+          "channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel"
+          },
+          "covers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Covers"
+          },
+          "gross_paise": {
+            "type": "integer",
+            "title": "Gross Paise"
+          },
+          "discount_paise": {
+            "type": "integer",
+            "title": "Discount Paise"
+          },
+          "tax_paise": {
+            "type": "integer",
+            "title": "Tax Paise"
+          },
+          "net_paise": {
+            "type": "integer",
+            "title": "Net Paise"
+          },
+          "payment_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Mode"
+          },
+          "table_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Table No"
+          },
+          "has_phone": {
+            "type": "boolean",
+            "title": "Has Phone"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "outlet_id",
+          "outlet_code",
+          "external_bill_no",
+          "business_date",
+          "ordered_at",
+          "channel",
+          "covers",
+          "gross_paise",
+          "discount_paise",
+          "tax_paise",
+          "net_paise",
+          "payment_mode",
+          "table_no",
+          "has_phone"
+        ],
+        "title": "OrderRow"
       },
       "OutletHealthRow": {
         "properties": {
@@ -7762,6 +8289,165 @@
         "additionalProperties": false,
         "type": "object",
         "title": "UpdateUserRequest"
+      },
+      "UploadRow": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outlet Id"
+          },
+          "outlet_code": {
+            "type": "string",
+            "title": "Outlet Code"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "original_filename": {
+            "type": "string",
+            "title": "Original Filename"
+          },
+          "file_sha256": {
+            "type": "string",
+            "title": "File Sha256"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "warnings": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "error_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Detail"
+          },
+          "adapter_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adapter Version"
+          },
+          "parsed_net_paise": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parsed Net Paise"
+          },
+          "uploaded_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploaded By Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "parsed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parsed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "outlet_id",
+          "outlet_code",
+          "source",
+          "original_filename",
+          "file_sha256",
+          "status",
+          "row_count",
+          "period_start",
+          "period_end",
+          "warnings",
+          "error_detail",
+          "adapter_version",
+          "parsed_net_paise",
+          "uploaded_by_name",
+          "created_at",
+          "parsed_at"
+        ],
+        "title": "UploadRow"
       },
       "UserListItem": {
         "properties": {

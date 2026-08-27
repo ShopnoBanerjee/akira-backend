@@ -435,6 +435,64 @@ single counter behind both this and the daily digest — two queries would
 eventually disagree, and the morning they did nobody would know which number to
 believe.
 
+## D15 — Sales ingestion is orders only, and the uploader names the outlet
+
+**Decided 27 Aug 2026.** Reading AKIRA's real Petpooja exports before writing
+the parser changed two things the spec assumed.
+
+**1. `sales_order_items` cannot be populated, so P9 does not populate it.**
+The spec says it comes "from Item Sale Report". It cannot: **no Petpooja item
+export carries a bill or invoice number.** All four in the supplied set were
+checked — Item Sale Report (hourly), Item Report Day Wise, Item Wise Sales,
+Highest Selling Items — and every one is pre-aggregated by hour, day, category
+or item. `sales_order_items.order_id` is `not null`; there is nothing to point
+it at.
+
+The options were to leave it empty, to relax `order_id` and store aggregates
+under a table whose name would then be a lie, or to wait. **Decided: leave it
+empty**, requested directly. Nothing in Stage 1 reads it — the Sales pillar is
+Stage 2 — so the cost today is zero, and a schema change made on a guess about
+a report nobody has seen would be worse than a gap that is written down.
+Tracked in `docs/OPEN_ITEMS.md`. If Petpooja turns out to offer a bill-wise
+item export on this plan, that is a second adapter, not a rewrite.
+
+**2. The uploader picks the outlet.** The Orders Master Report has no outlet
+column; its preamble names only the restaurant ("Akira"), so both outlets would
+produce files that look identical. Matching on a stored `petpooja_name` was
+considered and rejected for now: it needs per-outlet configuration before the
+first upload can work, and breaks silently if the name is ever edited in
+Petpooja. An explicit choice at upload time is auditable and wrong choices are
+correctable, because ingestion is idempotent.
+
+**Idempotency is on the bytes, not the filename.** `data_uploads.file_sha256`
+is unique. Petpooja filenames carry an export timestamp and change every time,
+so a filename check would catch nothing; somebody will re-send the same export
+because nothing about a spreadsheet says whether it has been sent. Re-uploading
+returns the original row and ingests nothing. The same file offered for a
+*different* outlet is refused rather than filed twice.
+
+**The source file is retained**, which is what `storage_path` is for: an
+adapter version bump must be able to re-read the original instead of asking for
+a fresh export. That does mean the raw export — 141 customer phone numbers and
+142 names in the current one — sits in Supabase Storage, so `sales-uploads` is
+private with no browser read path. Only the salted digest reaches a database
+column, and the raw number never leaves the parse loop.
+
+**Overlapping exports upsert rather than insert.** Each new export covers the
+same weeks plus a few more days. A bill already present is updated in place, so
+a corrected total replaces the old one instead of being skipped forever.
+
+**Written set-at-a-time.** The first version looped one statement per bill and
+took **75 seconds** for 452 rows against Supabase — 452 round trips. The same
+work as a single `unnest` upsert takes **5.4 seconds**. Six weeks is the small
+case; a year would have taken eleven minutes and looked like a hang.
+
+**Verified against the real file, not a sample.** 452 bills, Rs 4,86,076.35 to
+the paisa, 38 trading days, zero warnings. The 21 bills struck before 05:00 all
+sit on the previous trading day. An independent cross-check: the daily total
+for 25 Aug is Rs 8,564.00, which is exactly the Total row of the separate
+hourly Item Sale Report for that day.
+
 ---
 
 ## Assumptions in force — challenge these if wrong
