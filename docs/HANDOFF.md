@@ -359,6 +359,24 @@ asserting a default passes or fails depending on whose machine it runs on, and
 one dispatch test quietly reached the real network once a provider was
 configured locally. Use `tests/conftest.py::isolated_settings`.
 
+**A job that reports a next run time is not a job that runs.** P7's schedule
+reconciler re-added every job every five minutes with `replace_existing=True`.
+Replacing a job rebuilds its trigger, and an interval trigger counts from the
+moment it is built — so `mark_missed`, on a fifteen-minute interval, was pushed
+fifteen minutes into the future every five and could never fire. Everything
+*said* it was fine: the scheduler listed it, `/jobs/schedule` showed a
+plausible next fire time, the logs showed the reconciler succeeding. The only
+evidence was an absence — no row in `job_runs` with `triggered_by is null`,
+ever. **When a background job is meant to have run, the question is not "is it
+scheduled" but "what did it write".**
+
+**Nobody had ever looked at CI.** It was red on every backend push from P1 to
+P8 — eight epics — over a single stray `
+` in a workflow. There is no `gh` on
+this machine, but the public API needs no auth:
+`curl -s "https://api.github.com/repos/ShopnoBanerjee/akira-backend/actions/runs?per_page=5"`.
+Check it after pushing.
+
 **`text()` bind parameters cannot be followed by `::casts`.** `:action::audit_action`
 is a syntax error through SQLAlchemy. Always `cast(:action as audit_action)`.
 
@@ -506,9 +524,9 @@ Parsing never runs in a request — it is a background task recorded to
 
 - **P10** Hardening: security review table, an RLS cross-outlet pytest, N+1
   audit, realistic 8-week seed dataset, RUNBOOK.md. Housekeeping that belongs
-  here: the 262-byte stub photos from P5/P6, the leftover test outlets
-  (AKR-TEST9, AKR-T469, AKR-SL03) that clutter every outlet picker, and the
-  hand-materialised business dates 2026-08-25 and 2026-08-28.
+  here: the 262-byte stub photos from P5/P6, and the hand-materialised business
+  dates 2026-08-25 and 2026-08-28. (The three leftover test outlets are already
+  soft-deleted and filtered out of every picker — checked, not assumed.)
 - **Stage 2** starts with the inventory/requisition engine. A real requisition
   PDF is already supplied for testing the AI extraction:
   `tests/fixtures/requisition_27aug2026.pdf`. The rule that carries over: **the

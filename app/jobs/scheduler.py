@@ -42,6 +42,10 @@ RECONCILE_MINUTES = 5
 
 _scheduler: AsyncIOScheduler | None = None
 
+#: The schedule currently installed. Compared against on every reconcile,
+#: because re-adding an unchanged job is not free — see reconcile().
+_applied: "Schedule | None" = None
+
 
 @dataclass(frozen=True)
 class Schedule:
@@ -60,8 +64,14 @@ async def read_schedule() -> Schedule:
 
 
 def _apply(scheduler: AsyncIOScheduler, schedule: Schedule) -> None:
-    """Install or move the three jobs. replace_existing makes this idempotent,
-    which is what lets the reconciler simply call it again."""
+    """Install or move the three jobs.
+
+    `replace_existing` makes this safe to call twice, but NOT free: replacing a
+    job rebuilds its trigger, and an interval trigger measures its next fire
+    from the moment it was built. Call this on an unchanged schedule and every
+    interval job's clock restarts. Only call it when something actually moved.
+    """
+    global _applied
     scheduler.add_job(
         tasks.materialise_runs,
         CronTrigger(
@@ -102,10 +112,18 @@ def _apply(scheduler: AsyncIOScheduler, schedule: Schedule) -> None:
         coalesce=True,
         max_instances=1,
     )
+    _applied = schedule
 
 
 async def reconcile() -> None:
-    """Pick up an edited job time without a restart."""
+    """Pick up an edited job time without a restart.
+
+    **Only when it changed.** This runs every few minutes; re-applying an
+    unchanged schedule rebuilds each trigger, and a rebuilt interval trigger
+    starts counting again from now. A 15-minute job reconciled every 5 minutes
+    is a job that is always 15 minutes away and therefore never runs — while
+    /jobs/schedule reports a perfectly plausible next fire time.
+    """
     if _scheduler is None:
         return
     try:
@@ -114,6 +132,9 @@ async def reconcile() -> None:
         # A blip reading settings must not tear down a working schedule.
         logger.exception("could not re-read the job schedule; keeping the current one")
         return
+    if schedule == _applied:
+        return
+    logger.info("job schedule changed: %s -> %s", _applied, schedule)
     _apply(_scheduler, schedule)
 
 
@@ -155,10 +176,11 @@ async def start() -> AsyncIOScheduler | None:
 
 
 async def shutdown() -> None:
-    global _scheduler
+    global _scheduler, _applied
     if _scheduler is not None:
         _scheduler.shutdown(wait=False)
         _scheduler = None
+    _applied = None
 
 
 def describe() -> list[dict[str, Any]]:
