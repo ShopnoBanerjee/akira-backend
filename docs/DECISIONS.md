@@ -385,6 +385,56 @@ because a model's self-reported certainty is not evidence, but it does less
 work when the values are saturated. Treat Groq verdicts as a demonstration that
 the plumbing works, not as a calibrated compliance signal.
 
+## D14 — No blended health score until there is something to blend
+
+**Decided 27 Aug 2026.** Spec section 5 defines outlet health as four weighted
+pillars summing to 100: Sales 30, SOP 30, Inventory 25, Guest 15. Stage 1
+delivers **only SOP**. P8 therefore ships the SOP compliance score as the
+headline number and draws the other three greyed, rather than computing a
+blended figure.
+
+**Why not just apply the weights now.** `0.30 x SOP` would render a flawless
+outlet as 27/100. Silently rescaling to the live weight instead — dividing by
+0.30 — makes the number *change* the day a second pillar lands, with nothing
+about the outlet having changed, which quietly invalidates every screenshot,
+target and conversation that referenced it. Both options produce a number
+somebody would act on and neither means what its label says. The layout is
+built for four pillars so nothing moves later; the arithmetic waits.
+
+**Consequences, all in P8:**
+
+- `GET /dashboard/outlet-health` returns `pillars` with `status: "live"` for
+  SOP and `"stage_2"` for the rest. The card greys them rather than hiding
+  them, so the shape of the finished thing is visible from the start.
+- `GET /dashboard/outlets` returns one SOP score per outlet, ordered by code
+  and **not** by score. A league table invites gaming the number rather than
+  doing the work.
+
+**Three scoring decisions the spec's formula did not settle:**
+
+1. **A component with no denominator contributes zero, and is not re-weighted
+   out.** An outlet that approved no runs has earned no run-score credit;
+   re-weighting the remaining terms would hand it full marks for a paper it
+   never sat.
+2. **Nothing scheduled means no score, not zero.** A closed outlet has not
+   failed — it has not been measured. `score` is null and the band is `none`,
+   the same principle as `run_score()` returning None for an all-N/A run.
+3. **The critical-failure cap holds the BAND, not the number.** "A single
+   unresolved critical failure caps the outlet at amber regardless of
+   arithmetic." The score stays honest at, say, 94 and the band reads amber
+   with an explicit reason, so the card can say *why* rather than showing a
+   silently depressed figure nobody can reconcile.
+
+**"1 point per integrity flag per 10 runs" is a rate, not a count.** The
+penalty is `10 x flags / scheduled`, so an outlet running twice as many
+checklists is not punished twice as hard for the same standard of honesty.
+
+**Weights are resolved at the END of the period being scored**, never "now"
+(D9). Re-opening July uses July's weights. `app/domains/sop/metrics.py` is the
+single counter behind both this and the daily digest — two queries would
+eventually disagree, and the morning they did nobody would know which number to
+believe.
+
 ---
 
 ## Assumptions in force — challenge these if wrong

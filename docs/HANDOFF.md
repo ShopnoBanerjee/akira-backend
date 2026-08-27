@@ -20,8 +20,8 @@ restaurant group in Kolkata. Stage 1 delivers three things:
 3. **Sales ingestion skeleton** — not built yet (P9).
 
 The governing specification is `docs/STAGE1_SPEC.md` (present in both repos).
-It is the contract. Where this build deviates from it — and it does, in thirteen
-places — every deviation is recorded in `docs/DECISIONS.md` as D1–D13 with its
+It is the contract. Where this build deviates from it — and it does, in fourteen
+places — every deviation is recorded in `docs/DECISIONS.md` as D1–D14 with its
 reasoning. **Read DECISIONS.md before proposing any change**; several
 "obvious improvements" are things that were deliberately decided against.
 
@@ -121,7 +121,7 @@ goes through FastAPI, which holds the service role.
 
 ---
 
-## 4. The thirteen decisions (D1–D13)
+## 4. The fourteen decisions (D1–D14)
 
 Full text in `docs/DECISIONS.md`. Summary, because each one will look like a
 mistake until you know why:
@@ -138,6 +138,7 @@ mistake until you know why:
 | **D9** | `app_settings` is **append-only with an effective date**. The value in force at a moment is the newest row at-or-before it, outlet override beating global. Historical scores stay reproducible. The registry in `app/core/settings_registry.py` owns each key's type/default/range. |
 | **D10** | Inventory catalogue pulled into Stage 1: ONE shared catalogue, levels per outlet. 151 items seeded from the real count sheets. |
 | **D11** | **Template item versioning.** Any material item edit bumps `checklist_templates.version` AND snapshots every item into `checklist_template_item_versions`, in one transaction. Runs point at the exact version they were answered against, so an admin flipping `is_critical` today cannot retroactively make past runs look like critical failures. |
+| **D14** | **No blended health score yet.** Spec section 5's four pillars sum to 100; Stage 1 has one of them. The SOP score is the headline and the other three are greyed — `0.30 x SOP` would read as 27/100 for a perfect outlet, and rescaling would make the number jump the day a second pillar lands. Also: a component with no denominator contributes 0 rather than being re-weighted out; nothing scheduled is *no score*, not zero; the critical-failure cap holds the BAND at amber and leaves the number honest. |
 | **D13** | **A second vision provider, testing only.** `AI_REVIEW_PROVIDER` picks `anthropic` (default, production) or `groq`. Same prompt, same question, different transport; the model that actually answered is stored on every verdict. Groq's only image-capable model is `qwen/qwen3.8-27b` and its free tier is 8000 TPM, which two photos exhaust — so a 429 is a first-class "no verdict". |
 | **D12** | **What P7 decided for itself.** Six rules, each of which looks arbitrary until you know why: a flag carries its evidence (`integrity_detail`); run-level flags live on the run, not stamped onto each photo; each pass clears only its own flags; `mark_missed` never touches `in_progress`; the AI confidence threshold is applied at READ time and `ai_mismatch` fires in one direction only; notifications degrade **loudly**. Vision model is `claude-sonnet-5` by the owner's decision. |
 
@@ -263,9 +264,9 @@ this workflow. Read the file, run it inside a transaction with asyncpg using
 
 ---
 
-## 7. What is built (P0–P7)
+## 7. What is built (P0–P8)
 
-**71 API operations across 56 paths. 252 backend tests, 41 frontend tests.
+**73 API operations across 58 paths. 294 backend tests, 49 frontend tests.
 25 tables, 13 migrations. All live on Supabase.**
 
 - **P0** Scaffold both repos, CI, tooling.
@@ -293,7 +294,11 @@ this workflow. Read the file, run it inside a transaction with asyncpg using
 - **P7** The integrity engine (all six checks, with evidence), the three
   scheduled jobs on an in-process APScheduler, and the advisory AI photo
   review with its per-outlet reference-photo capture flow. Migration 0013.
-  See D12 for the six choices it forced.
+  See D12 for the six choices it forced, and D13 for the second vision
+  provider added so the AI path could actually be run.
+- **P8** The compliance dashboard: the outlet formula from spec 4.3, one shared
+  counter behind it and the digest, and the four-pillar card with three pillars
+  greyed. See D14.
 
 There is **real data** in the system now: 66 runs across four business dates in
 several states, 30 exceptions, 16 job runs, real JPEGs in storage with pHashes,
@@ -478,55 +483,63 @@ thinking, the model IDs — is not what a training prior will tell you.
 
 ---
 
-## 10. NEXT: P8 — the compliance dashboard
+## 10. NEXT: P9 — sales ingestion
 
-`app/core/scoring.py` already has the run-level functions and they are tested.
-What is missing is the outlet-level formula, spec section 4.3:
+P8 is done. `app/core/scoring.py` holds the outlet formula from spec 4.3,
+`app/domains/sop/metrics.py` is the single counter behind both the dashboard
+and the daily digest, and `/dashboard/outlet-health` renders the four-pillar
+card with three pillars greyed (D14).
 
-```
-outlet SOP score (period) =
-      0.50 x mean(run.score_pct for approved runs)
-    + 0.30 x completion_rate      -- runs approved / runs scheduled
-    + 0.20 x on_time_rate         -- submitted before due+grace / submitted
-    - 2 points per open high-severity exception older than 48h
-    - 1 point per integrity flag per 10 runs
-    (clamped 0-100)
-```
+**P9 is the Petpooja XLSX upload.** Real exports are in the user's Downloads
+folder (`Orders_Master_Report_2026_08_25_*.xlsx`,
+`Item_Sale_Report_Hourly_Wise_*.xlsx`). Two acceptance facts to hit:
 
-Bands: >=90 green, 75-89 amber, <75 red. **A single unresolved critical failure
-caps the outlet at amber regardless of the arithmetic.**
+- totals reconcile to **Rs 4,86,076 across 452 orders**;
+- a bill at **00:45 on 23 Aug lands on business_date 2026-08-22**. This is the
+  rollover doing its job, and it is the single most likely thing to get wrong.
 
-Three things P7 built that P8 should use rather than rebuild:
+Parsing never runs in a request — it is a background task recorded to
+`job_runs`, like the photo passes. `A2` says manual upload for all of Stage 1;
+`api_source.py` ships as a documented stub.
 
-- Every weight and band is already in the settings registry, and
-  `app/core/settings_value.py` resolves any of them **at a point in time**.
-  Pass the period's end so scoring a past month uses the weights that were live
-  then (D9). Do not read the registry defaults directly.
-- `checklist_runs.integrity_flag_count` is already run-level flags plus every
-  item-level flag, which is exactly the penalty's input.
-- `app/jobs/digest.py` already computes completion, on-time rate, mean score and
-  open/stale exceptions per outlet per business date. If the dashboard's numbers
-  ever disagree with the digest's, one of them is wrong — consider having the
-  digest call whatever P8 writes.
+### After P9
 
-The dashboard renders as a **four-pillar card with Sales, Inventory and Guest
-greyed as "Coming in Stage 2"**, so the layout does not change later.
-
-### After P8
-
-- **P9** Sales ingestion. Real Petpooja exports are in the user's Downloads
-  folder (`Orders_Master_Report_2026_08_25_*.xlsx`,
-  `Item_Sale_Report_Hourly_Wise_*.xlsx`). Totals must reconcile to
-  Rs 4,86,076 across 452 orders, and a bill at 00:45 on 23 Aug must land on
-  business_date 2026-08-22.
 - **P10** Hardening: security review table, an RLS cross-outlet pytest, N+1
-  audit, realistic 8-week seed dataset, RUNBOOK.md. Two pieces of housekeeping
-  belong here too: the 262-byte stub photos left from P5/P6, and the leftover
-  test outlets (AKR-TEST9, AKR-T469, AKR-SL03) that clutter every outlet picker.
-- **Stage 2** starts with the inventory/requisition engine. The user has already
-  supplied a real requisition PDF for testing the AI extraction:
+  audit, realistic 8-week seed dataset, RUNBOOK.md. Housekeeping that belongs
+  here: the 262-byte stub photos from P5/P6, the leftover test outlets
+  (AKR-TEST9, AKR-T469, AKR-SL03) that clutter every outlet picker, and the
+  hand-materialised business dates 2026-08-25 and 2026-08-28.
+- **Stage 2** starts with the inventory/requisition engine. A real requisition
+  PDF is already supplied for testing the AI extraction:
   `tests/fixtures/requisition_27aug2026.pdf`. The rule that carries over: **the
   LLM parses and explains; deterministic code decides.**
+
+### What P8 shipped, and the traps in it
+
+`GET /dashboard/outlets` — one SOP score per visible outlet, ordered by code.
+`GET /dashboard/outlet-health?outlet_id=&days=&to=` — the card: score, band,
+the three weighted components with their contributions, the penalties with
+their evidence, the worst component named, the counts, and a per-day trend.
+
+Four things that will look wrong until you know why (all D14):
+
+1. **A component with no denominator contributes 0** and is not re-weighted
+   out. An outlet that approved nothing has earned no run-score credit.
+2. **Nothing scheduled means `score: null`, not 0.** A closed outlet has not
+   failed; it has not been measured.
+3. **The critical-failure cap holds the BAND at amber and leaves the number
+   alone.** A 94 showing amber with "cannot be green with 1 unresolved
+   critical failure" is the intended reading.
+4. **The integrity penalty is a rate** — `10 x flags / scheduled` — so a busier
+   outlet is not punished harder for the same standard of honesty.
+
+**Weights are resolved at the end of the period being scored**, never "now"
+(D9). If a dashboard number for a past month ever moves after somebody edits a
+weight, that resolution has been bypassed.
+
+**The dashboard and the digest must agree.** They share
+`app/domains/sop/metrics.py::outlet_counts` for exactly that reason. If you add
+a metric, add it there rather than beside it.
 
 ---
 

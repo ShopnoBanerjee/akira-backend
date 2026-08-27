@@ -15,6 +15,7 @@ from sqlalchemy import text
 from app.core.config import get_settings
 from app.core.db import dispose_engine, get_engine
 from app.core.errors import register_error_handlers
+from app.domains.dashboard.router import router as dashboard_router
 from app.domains.devices.router import router as devices_router
 from app.domains.inventory.router import router as inventory_router
 from app.domains.jobs.router import router as jobs_router
@@ -69,6 +70,7 @@ app.include_router(devices_router)
 app.include_router(inventory_router)
 app.include_router(settings_router)
 app.include_router(jobs_router)
+app.include_router(dashboard_router)
 # runs_router first: /sop/runs/... must match before /sop's own routes.
 app.include_router(runs_router)
 app.include_router(review_router)

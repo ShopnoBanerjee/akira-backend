@@ -29,6 +29,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings_value import resolve_float
+from app.domains.sop import metrics
 
 #: Bumped when the layout changes materially, so a stored digest can be read
 #: against the shape it was written in.
@@ -98,21 +99,22 @@ async def build(db: AsyncSession, *, outlet_id: uuid.UUID, business_date: date) 
     if outlet is None:
         raise ValueError(f"outlet {outlet_id} does not exist")
 
-    totals = (
+    # The same counter the dashboard uses, for one business date. Two queries
+    # would eventually disagree, and the morning they did nobody would know
+    # which number to believe.
+    counts = await metrics.outlet_counts(
+        db, outlet_id=outlet_id, start=business_date, end=business_date
+    )
+    # Only the two the shared counter has no reason to carry.
+    extra = (
         (
             await db.execute(
                 text(
                     """
-                    select count(*) as scheduled,
-                           count(*) filter (where status = 'approved') as approved,
-                           count(*) filter (where status = 'submitted') as submitted_awaiting,
-                           count(*) filter (where status = 'missed') as missed,
-                           count(*) filter (where status in ('pending', 'in_progress'))
+                    select count(*) filter (where status in ('pending', 'in_progress'))
                                as still_open,
-                           cast(avg(score_pct) filter (where status = 'approved') as float8)
-                               as mean_score,
-                           coalesce(sum(critical_fail_count), 0) as critical_fails,
-                           coalesce(sum(integrity_flag_count), 0) as integrity_flags
+                           count(*) filter (where status = 'submitted') as submitted_awaiting,
+                           coalesce(sum(critical_fail_count), 0) as critical_fails
                       from checklist_runs
                      where outlet_id = :outlet_id and business_date = :business_date
                     """
@@ -124,42 +126,30 @@ async def build(db: AsyncSession, *, outlet_id: uuid.UUID, business_date: date) 
         .one()
     )
 
-    exceptions = (
-        (
-            await db.execute(
-                text(
-                    """
-                    select count(*) as open_exceptions,
-                           count(*) filter (
-                               where severity = 'high'
-                                 and created_at < now() - interval '48 hours'
-                           ) as stale_exceptions
-                      from sop_exceptions
-                     where outlet_id = :outlet_id
-                       and status in ('open', 'acknowledged')
-                    """
-                ),
-                {"outlet_id": outlet_id},
-            )
+    open_exceptions = (
+        await db.execute(
+            text(
+                "select count(*) from sop_exceptions where outlet_id = :outlet_id"
+                " and status in ('open', 'acknowledged')"
+            ),
+            {"outlet_id": outlet_id},
         )
-        .mappings()
-        .one()
-    )
+    ).scalar_one()
 
     return Digest(
         outlet_code=outlet["code"],
         outlet_name=outlet["name"],
         business_date=business_date,
-        scheduled=totals["scheduled"],
-        approved=totals["approved"],
-        submitted_awaiting=totals["submitted_awaiting"],
-        missed=totals["missed"],
-        still_open=totals["still_open"],
-        mean_score=(round(totals["mean_score"], 1) if totals["mean_score"] is not None else None),
-        critical_fails=totals["critical_fails"],
-        integrity_flags=totals["integrity_flags"],
-        open_exceptions=exceptions["open_exceptions"],
-        stale_exceptions=exceptions["stale_exceptions"],
+        scheduled=counts.scheduled,
+        approved=counts.approved,
+        submitted_awaiting=extra["submitted_awaiting"],
+        missed=counts.missed,
+        still_open=extra["still_open"],
+        mean_score=counts.mean_run_score,
+        critical_fails=extra["critical_fails"],
+        integrity_flags=counts.integrity_flags,
+        open_exceptions=open_exceptions,
+        stale_exceptions=counts.stale_critical,
         spot_checks=await _spot_checks(db, outlet_id=outlet_id, business_date=business_date),
     )
 

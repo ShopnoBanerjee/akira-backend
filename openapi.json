@@ -1659,6 +1659,158 @@
         }
       }
     },
+    "/dashboard/outlets": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "One score per outlet the caller can see",
+        "description": "The comparison row across outlets. Ordered by code, not by score \u2014 a\nleague table invites gaming the number rather than doing the work.",
+        "operationId": "outlet_scores_dashboard_outlets_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "default": 28,
+              "title": "Days"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OutletHealthRow"
+                  },
+                  "title": "Response Outlet Scores Dashboard Outlets Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dashboard/outlet-health": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "The four-pillar health card for one outlet",
+        "description": "Everything the card renders: the score, how it was arrived at, what\ndragged it down, and the trend behind it.",
+        "operationId": "outlet_health_dashboard_outlet_health_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outlet_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Outlet Id"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "default": 28,
+              "title": "Days"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Outlet Health Dashboard Outlet Health Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/sop/runs/today": {
       "get": {
         "tags": [
@@ -5529,6 +5681,52 @@
           "outlets"
         ],
         "title": "MeResponse"
+      },
+      "OutletHealthRow": {
+        "properties": {
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outlet Id"
+          },
+          "outlet_code": {
+            "type": "string",
+            "title": "Outlet Code"
+          },
+          "outlet_name": {
+            "type": "string",
+            "title": "Outlet Name"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "band": {
+            "type": "string",
+            "title": "Band"
+          },
+          "capped_by_critical": {
+            "type": "boolean",
+            "title": "Capped By Critical"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outlet_id",
+          "outlet_code",
+          "outlet_name",
+          "score",
+          "band",
+          "capped_by_critical"
+        ],
+        "title": "OutletHealthRow"
       },
       "OutletLevel": {
         "properties": {
