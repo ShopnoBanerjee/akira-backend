@@ -24,6 +24,7 @@ dependencies = [
     # Photo integrity: perceptual hashing and mean luminance. Both run in a
     # background task, never in a request path.
     "pillow>=11.0.0",
+    "pypdf>=6.0.0",
     "imagehash>=4.3.1",
     # In-process scheduler for the daily jobs. Single instance for Stage 1;
     # a second replica would need a shared lock before this is safe.

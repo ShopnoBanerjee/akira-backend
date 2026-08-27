@@ -124,6 +124,14 @@ class TestMappingExtractedNames:
         )
         assert mapper.match("Chilli") is None
 
+    def test_a_wrong_but_similar_name_stays_unmatched(self) -> None:
+        """The measured false positive that set the floor: "Mystery Sauce"
+        scores 0.880 against Oyster Sauce — high enough to fool a loose
+        threshold, wrong enough to corrupt an order. Real OCR slips score
+        above 0.96; the floor sits between."""
+        mapper = Mapper([entry("a", "Oyster Sauce")], aliases={})
+        assert mapper.match("Mystery Sauce") is None
+
     def test_garbage_maps_to_nobody(self) -> None:
         mapper = Mapper([entry("a", "Sweet Corn")], aliases={})
         assert mapper.match("Wagyu A5 Striploin") is None

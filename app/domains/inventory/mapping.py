@@ -23,8 +23,12 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Any
 
-#: Below this, a fuzzy candidate is not a match at all.
-FUZZY_FLOOR = 0.84
+#: Below this, a fuzzy candidate is not a match at all. Calibrated on
+#: measured pairs, not intuition: real OCR slips of catalogue names score
+#: >= 0.96 ("Peelred Garlic" 0.963, "Shiitake" for Shitake 0.970), while the
+#: measured false positive — "Mystery Sauce" onto Oyster Sauce — scores
+#: 0.880. The floor sits between the clusters.
+FUZZY_FLOOR = 0.92
 #: If the runner-up is within this of the best, the best is not trustworthy —
 #: two catalogue items are plausibly the same sheet row, so nobody wins.
 FUZZY_AMBIGUITY_GAP = 0.06

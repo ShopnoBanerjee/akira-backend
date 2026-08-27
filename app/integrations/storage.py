@@ -211,6 +211,28 @@ async def upload_bytes(
     return path
 
 
+async def ensure_private_bucket(
+    bucket: str, *, file_size_limit: int, allowed_mime_types: list[str]
+) -> None:
+    """Create a private bucket if it does not exist. Idempotent."""
+    client = _client()
+    response = await client.post(
+        "/bucket",
+        json={
+            "id": bucket,
+            "name": bucket,
+            "public": False,
+            "file_size_limit": file_size_limit,
+            "allowed_mime_types": allowed_mime_types,
+        },
+    )
+    if response.status_code >= 400 and "already exists" not in response.text.lower():
+        raise StorageError(
+            f"Could not create the {bucket} bucket.",
+            extra={"provider_status": response.status_code, "body": response.text[:200]},
+        )
+
+
 async def ensure_bucket() -> None:
     """Create the private photo bucket if it does not exist. Idempotent."""
     client = _client()

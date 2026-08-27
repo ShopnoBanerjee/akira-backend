@@ -80,6 +80,14 @@ class Settings(BaseSettings):
     # recorded on every verdict, so the two never get confused for each other.
     AI_REVIEW_PROVIDER: Literal["anthropic", "groq"] = "anthropic"
     GROQ_API_KEY: str = ""
+
+    # --- Stage 2: stock sheet extraction -------------------------------------
+    # Anthropic is the production extractor: row-aligning handwriting is the
+    # visual task where the Groq fallback measurably fails (values shift onto
+    # neighbouring rows at high confidence). groq stays usable for exercising
+    # the pipeline; everything it extracts is forced into human review.
+    STOCK_EXTRACT_PROVIDER: Literal["anthropic", "groq"] = "anthropic"
+    STOCK_EXTRACT_MODEL: str = "claude-opus-5"
     #: The only image-capable model on Groq's roster, confirmed by asking each
     #: candidate to describe a picture rather than by reading a table.
     GROQ_VISION_MODEL: str = "qwen/qwen3.8-27b"

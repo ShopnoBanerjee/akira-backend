@@ -17,6 +17,7 @@ from app.core.db import dispose_engine, get_engine
 from app.core.errors import register_error_handlers
 from app.domains.dashboard.router import router as dashboard_router
 from app.domains.devices.router import router as devices_router
+from app.domains.inventory.counts_router import router as stock_counts_router
 from app.domains.inventory.router import router as inventory_router
 from app.domains.jobs.router import router as jobs_router
 from app.domains.outlets.router import router as outlets_router
@@ -71,6 +72,7 @@ app.include_router(users_router)
 app.include_router(outlets_router)
 app.include_router(devices_router)
 app.include_router(inventory_router)
+app.include_router(stock_counts_router)
 app.include_router(settings_router)
 app.include_router(jobs_router)
 app.include_router(dashboard_router)
