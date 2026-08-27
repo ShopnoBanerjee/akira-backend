@@ -154,7 +154,9 @@ def parse_quantity(raw: str | None, item_unit: InventoryUnit) -> Parsed | Refuse
             )
         return Parsed(
             qty=converted,
-            detail={"read_as": f"{number:g} {written_unit.value}", "converted_to": item_unit.value},
+            # The suffix as WRITTEN, not its canonical unit — a reviewer
+            # checking "3kg" against the note must see "3 kg", not "3 gram".
+            detail={"read_as": f"{number:g} {suffix}", "converted_to": item_unit.value},
         )
 
     # No suffix: the number is in the sheet's column unit, which is the item's

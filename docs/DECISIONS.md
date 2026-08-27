@@ -604,6 +604,55 @@ at night. Left for a deliberate change with an explicit invalidation story.
 
 ---
 
+## D17 — The stock count engine parses on paper's terms, not the model's (P11)
+
+Stage 2 opens with the count-sheet pipeline. The governing spec rule — the LLM
+parses and explains, deterministic code decides — was enforced structurally,
+then each choice inside it was measured.
+
+**The extraction provider was decided by experiment, not preference.** The
+real 27 Aug sheet (8 photographed pages, handwritten counts over printed
+rows) went to the Groq qwen vision model twice: naive, then with anchored
+catalogue names and double-resolution half-pages. Names anchored fine; the
+handwritten values did not — they landed on neighbouring rows at 0.9
+confidence, and "2.800" became 2500, "700" became 500. Wrong-and-confident is
+the one failure mode the pipeline cannot tolerate, so Anthropic is the
+production extraction provider (STOCK_EXTRACT_PROVIDER) and every line the
+Groq fallback produces is forced into human review regardless of its claimed
+confidence. Groq remains for exercising the pipeline on a free key.
+
+**The quantity parser never guesses.** Conventions were read off the real
+sheet: "1.500" under a grams column is the kitchen's thousands-dot (1.5 kg);
+"1kg" converts; a circled zero is a counted zero; blank is "nobody counted"
+and stays null. Everything else — "5pk" on a grams item, "1kg 7pc", "1.5" —
+is refused with the raw preserved and the reason attached. A wrong number
+that looks right flows into an order; a refusal flows to a person.
+
+**The fuzzy-match floor is 0.92, set by measured clusters.** Real OCR slips
+of catalogue names score >= 0.96 ("Peelred Garlic" 0.963); the measured false
+positive — "Mystery Sauce" onto Oyster Sauce, found by a test — scores 0.880.
+Fuzzy also refuses when two candidates score within 0.06 of each other,
+because the Chilli Powder / Chilli Flakes / Dry Chilli / Green Chilli family
+is real and mapping between them corrupts an order quietly. Confirmed human
+corrections are remembered as aliases (spec: confirm once, remembered).
+
+**The requisition formula is the par gap, nothing more.**
+max(0, par − on_hand) rounded UP to order_unit, working attached to every
+line. The spec's fuller formula needs a covers forecast and recipes — Stage 3;
+pretending otherwise with six weeks of history would dress a guess as
+arithmetic. No par means no number and a `no_par` flag, never an invention.
+And the chef's handwritten ask beats the formula as the default final
+quantity: the person who ran the shift knows about tomorrow's booking, the
+formula does not. `padding` flags an ask more than 1.3× the computed need —
+advisory, like every flag in this system.
+
+**A half-reviewed count cannot confirm, and a requisition needs a confirmed
+count.** Both refusals exist so no number a manager acts on ever traces back
+to an unreviewed model output. Counts restrict-delete from requisitions for
+the same reason: the evidence outlives the conclusion.
+
+---
+
 ## Assumptions in force — challenge these if wrong
 
 - **A1 — `ops_manager` approves outlet-manager submissions.** Spec open question

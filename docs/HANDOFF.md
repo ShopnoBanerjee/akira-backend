@@ -518,7 +518,16 @@ thinking, the model IDs — is not what a training prior will tell you.
 
 ---
 
-## 10. NEXT: Stage 2
+## 10. NEXT: Stage 2 (P11 underway)
+
+**P11 — the stock count engine — is live.** Migration 0015, the extraction
+pipeline (sheet_extraction.py, provider-dispatched like vision.py), the
+never-guess parser and calibrated mapper (D17), review/confirm/requisition
+APIs, and the frontend screens (/app/inventory/counts). Verified against the
+real 8-page requisition PDF: 147 lines, 146 exact-mapped, kitchen conventions
+parsed, refusals attached, one line resolved through the UI and traced in the
+database. Extraction currently runs on the Groq fallback (STOCK_EXTRACT_PROVIDER)
+with every line review-bound; the production path needs ANTHROPIC_API_KEY.
 
 Stage 1 is code-complete as of P10. What remains before real use is not code:
 rotate the Groq key, set SMTP, capture reference standards outlet by outlet,

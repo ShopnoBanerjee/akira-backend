@@ -1349,6 +1349,549 @@
         }
       }
     },
+    "/inventory/counts": {
+      "post": {
+        "tags": [
+          "stock-counts"
+        ],
+        "summary": "Upload a photographed count sheet",
+        "description": "Accepts the sheet, answers immediately; extraction runs behind a\njob_runs bracket and the count appears in `review` when it lands.",
+        "operationId": "upload_sheet_inventory_counts_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_sheet_inventory_counts_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Upload Sheet Inventory Counts Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "stock-counts"
+        ],
+        "summary": "Counts for an outlet, newest first",
+        "operationId": "list_counts_inventory_counts_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outlet_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Outlet Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 30,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response List Counts Inventory Counts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inventory/counts/{count_id}": {
+      "get": {
+        "tags": [
+          "stock-counts"
+        ],
+        "summary": "One count, with every line",
+        "operationId": "get_count_inventory_counts__count_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "count_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Count Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Count Inventory Counts  Count Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inventory/counts/{count_id}/lines/{line_id}": {
+      "patch": {
+        "tags": [
+          "stock-counts"
+        ],
+        "summary": "Resolve a line",
+        "operationId": "review_line_inventory_counts__count_id__lines__line_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "count_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Count Id"
+            }
+          },
+          {
+            "name": "line_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Line Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewLineRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Review Line Inventory Counts  Count Id  Lines  Line Id  Patch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inventory/counts/{count_id}/re-extract": {
+      "post": {
+        "tags": [
+          "stock-counts"
+        ],
+        "summary": "Read the stored sheet again",
+        "description": "The stored file is re-read \u2014 after a failure, or under a newer\nextractor. Existing unconfirmed lines are replaced wholesale.",
+        "operationId": "re_extract_inventory_counts__count_id__re_extract_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "count_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Count Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Re Extract Inventory Counts  Count Id  Re Extract Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inventory/counts/{count_id}/confirm": {
+      "post": {
+        "tags": [
+          "stock-counts"
+        ],
+        "summary": "Sign the count off",
+        "operationId": "confirm_count_inventory_counts__count_id__confirm_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "count_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Count Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Confirm Count Inventory Counts  Count Id  Confirm Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inventory/requisitions": {
+      "post": {
+        "tags": [
+          "stock-counts"
+        ],
+        "summary": "Compute a requisition from a confirmed count",
+        "operationId": "build_requisition_inventory_requisitions_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "count_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Count Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Build Requisition Inventory Requisitions Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inventory/requisitions/{requisition_id}": {
+      "get": {
+        "tags": [
+          "stock-counts"
+        ],
+        "summary": "One requisition, lines and working",
+        "operationId": "get_requisition_inventory_requisitions__requisition_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "requisition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Requisition Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Requisition Inventory Requisitions  Requisition Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inventory/requisitions/{requisition_id}/lines": {
+      "patch": {
+        "tags": [
+          "stock-counts"
+        ],
+        "summary": "Set a final quantity",
+        "operationId": "set_final_qty_inventory_requisitions__requisition_id__lines_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "requisition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Requisition Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinalQtyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Set Final Qty Inventory Requisitions  Requisition Id  Lines Patch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inventory/requisitions/{requisition_id}/finalise": {
+      "post": {
+        "tags": [
+          "stock-counts"
+        ],
+        "summary": "Lock the requisition",
+        "operationId": "finalise_requisition_inventory_requisitions__requisition_id__finalise_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "requisition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Requisition Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Finalise Requisition Inventory Requisitions  Requisition Id  Finalise Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/settings": {
       "get": {
         "tags": [
@@ -4667,6 +5210,26 @@
         ],
         "title": "Body_upload_export_sales_uploads_post"
       },
+      "Body_upload_sheet_inventory_counts_post": {
+        "properties": {
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outlet Id"
+          },
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outlet_id",
+          "file"
+        ],
+        "title": "Body_upload_sheet_inventory_counts_post"
+      },
       "Category": {
         "properties": {
           "id": {
@@ -5380,6 +5943,33 @@
           "age_hours"
         ],
         "title": "ExceptionRow"
+      },
+      "FinalQtyRequest": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Item Id"
+          },
+          "final_qty": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Qty"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id"
+        ],
+        "title": "FinalQtyRequest"
       },
       "FloorStaff": {
         "properties": {
@@ -6897,6 +7487,54 @@
           "resolution_note"
         ],
         "title": "ResolveRequest"
+      },
+      "ReviewLineRequest": {
+        "properties": {
+          "item_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Id"
+          },
+          "qty": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty"
+          },
+          "requested_qty": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Qty"
+          },
+          "remember_alias": {
+            "type": "boolean",
+            "title": "Remember Alias",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ReviewLineRequest"
       },
       "RunJobRequest": {
         "properties": {

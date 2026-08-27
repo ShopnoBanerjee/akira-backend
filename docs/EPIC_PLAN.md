@@ -13,6 +13,7 @@ E0–E9 assumed a monorepo and a smaller admin surface; both changed. See
 | **P2** | Auth: JWT verification, roles, shared-tablet PIN, protected routing | next |
 | **P3a** | Admin — organisation: outlets, users, roles, devices | |
 | **P3b** | Admin — configuration: inventory catalogue, settings, job runs | |
+| **P11** | Stage 2 opens: stock count extraction, review, requisitions (D17) | |
 | **P4** | SOP template builder, versioning, assignments | |
 | **P5** | Checklist runner (mobile, offline-tolerant) | |
 | **P6** | Manager review and approval queue | |

@@ -221,7 +221,12 @@ async def _extract_groq(image_bytes: bytes, *, vocabulary: list[str]) -> PageRes
             },
         ],
         "temperature": 0,
-        "max_tokens": 6000,
+        # The free tier pre-checks prompt + max_tokens against its 8k
+        # tokens-per-minute ceiling and answers 413 when the SUM exceeds it —
+        # a page image is ~2k prompt tokens, so the output budget has to leave
+        # room. A 30-row page measured ~1.7k completion tokens; 4000 is head
+        # room without tripping the gate.
+        "max_tokens": 4000,
         "response_format": {"type": "json_object"},
     }
     started = time.monotonic()
@@ -241,7 +246,9 @@ async def _extract_groq(image_bytes: bytes, *, vocabulary: list[str]) -> PageRes
             logger.info("groq rate limited; waiting %.0fs (attempt %d)", retry_after, attempt + 1)
             await asyncio.sleep(min(retry_after + 1, 90))
     if response.status_code != 200:
-        raise VisionUnavailable(f"Groq refused the extraction: {response.status_code}.")
+        raise VisionUnavailable(
+            f"Groq refused the extraction: {response.status_code} {response.text[:200]}"
+        )
     latency = int((time.monotonic() - started) * 1000)
     payload = response.json()
     content = payload["choices"][0]["message"]["content"]
