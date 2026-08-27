@@ -632,28 +632,40 @@ async def submit_run(
         },
     )
 
-    # Every critical fail becomes a tracked exception, immediately.
-    for item in run["items"]:
-        if item["is_critical"] and item["result"] == ItemResult.FAIL.value:
-            await db.execute(
-                text(
-                    """
-                    insert into sop_exceptions
-                        (run_item_id, outlet_id, business_date, severity,
-                         title, detail, photo_path)
-                    values (:run_item_id, :outlet_id, :business_date, 'high',
-                            :title, :detail, :photo_path)
-                    """
-                ),
-                {
-                    "run_item_id": item["id"],
-                    "outlet_id": run["outlet_id"],
-                    "business_date": run["business_date"],
-                    "title": f"Critical fail: {item['title']}",
-                    "detail": item["note"],
-                    "photo_path": item["photo_path"],
-                },
-            )
+    # Every critical fail becomes a tracked exception, immediately — and in
+    # one statement, because this runs inside submit while somebody on the
+    # floor is watching a spinner. A statement per fail meant a bad night (the
+    # exact case with several critical fails) got slower in proportion to how
+    # bad it was.
+    fails = [
+        item
+        for item in run["items"]
+        if item["is_critical"] and item["result"] == ItemResult.FAIL.value
+    ]
+    if fails:
+        await db.execute(
+            text(
+                """
+                insert into sop_exceptions
+                    (run_item_id, outlet_id, business_date, severity,
+                     title, detail, photo_path)
+                select f.run_item_id, :outlet_id, :business_date, 'high',
+                       f.title, f.detail, f.photo_path
+                  from unnest(
+                           cast(:item_ids as uuid[]), cast(:titles as text[]),
+                           cast(:details as text[]), cast(:photo_paths as text[])
+                       ) as f(run_item_id, title, detail, photo_path)
+                """
+            ),
+            {
+                "outlet_id": run["outlet_id"],
+                "business_date": run["business_date"],
+                "item_ids": [item["id"] for item in fails],
+                "titles": [f"Critical fail: {item['title']}" for item in fails],
+                "details": [item["note"] for item in fails],
+                "photo_paths": [item["photo_path"] for item in fails],
+            },
+        )
 
     await record(
         db,

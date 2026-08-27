@@ -560,6 +560,23 @@ The worst endpoint went from 9 SQL statements and 2 serial HTTPS calls to
 **4 statements and 1**. Most list endpoints now sit at two round trips — one to
 authenticate, one to answer — which is the floor without caching identity.
 
+### The N+1 audit that followed
+
+An AST sweep for awaited queries inside loops found seven sites. Two were
+real and fixed: `mark_missed` paid two round trips per overdue run (and had a
+race — the exception was raised even when the guarded update matched nothing
+because someone had started the run in between; the set-based version joins
+the insert to the update's `returning`, so "flipped" and "raised" are the same
+set by construction), and submit paid one insert per critical fail — on the
+floor's hot path, so a bad night got slower in proportion to how bad it was.
+
+Three were left alone, each for a reason worth keeping: the sales writer's
+loop is the deliberate 1000-row chunking from P9, not an N+1;
+`materialise_runs` keeps its per-assignment loop because the cadence predicate
+lives in Python on purpose and moving it into SQL would give it two homes; and
+`replace_memberships` iterates over an admin's outlet list, which is bounded by
+the number of outlets the group has.
+
 ### What was rejected
 
 **supabase-py instead of SQLAlchemy.** Benchmarked head to head rather than

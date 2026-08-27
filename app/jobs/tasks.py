@@ -94,60 +94,90 @@ def _local(when: datetime, timezone: str | None) -> str:
     return when.astimezone(tz).strftime("%Y-%m-%d %H:%M %Z")
 
 
-async def mark_missed(*, triggered_by: uuid.UUID | None = None) -> dict[str, Any]:
+async def sweep_overdue(db: AsyncSession) -> dict[str, Any]:
     """Pending runs past due plus grace become missed, each raising a
     medium-severity exception.
 
     Medium, not high: nobody did the checklist, which is a management problem
     to chase, not the same class of event as a critical food-safety item being
     failed outright.
-    """
 
-    async def body(db: AsyncSession) -> dict[str, Any]:
-        overdue = (await db.execute(_OVERDUE_SQL)).mappings().all()
-        marked: list[dict[str, Any]] = []
-        for run in overdue:
-            await db.execute(
-                text(
-                    "update checklist_runs set status = 'missed'"
-                    " where id = :id and status = 'pending'"
+    A module-level function rather than a closure inside the job so the tests
+    can point it at their own database — the job wrapper below only adds the
+    job_runs bracket.
+    """
+    overdue = (await db.execute(_OVERDUE_SQL)).mappings().all()
+    if not overdue:
+        return {"marked_missed": 0, "runs": []}
+
+    # One statement flips every run and raises every exception, however
+    # many there are. The loop this replaced cost two round trips per run —
+    # and, worse, it raised the exception even when its guarded update
+    # matched nothing because somebody had started the run between the
+    # select and the update. Joining the insert to the update's `returning`
+    # makes "flipped" and "raised an exception" the same set by
+    # construction.
+    #
+    # Titles and details stay rendered in Python: the outlet-local
+    # timestamp formatting has no business being duplicated into SQL.
+    flipped_ids = {
+        row[0]
+        for row in await db.execute(
+            text(
+                """
+                with flipped as (
+                    update checklist_runs
+                       set status = 'missed'
+                     where id = any(:ids) and status = 'pending'
+                     returning id
                 ),
-                {"id": run["id"]},
-            )
-            await db.execute(
-                text(
-                    """
+                raised as (
                     insert into sop_exceptions
                         (outlet_id, business_date, severity, title, detail)
-                    values (:outlet_id, :business_date, 'medium', :title, :detail)
-                    """
-                ),
-                {
-                    "outlet_id": run["outlet_id"],
-                    "business_date": run["business_date"],
-                    "title": f"Missed: {run['template_name']}",
-                    # Rendered in the outlet's own timezone. A manager in
-                    # Kolkata reading "19:00 UTC" has to do arithmetic to find
-                    # out whether the closing checklist was skipped, and will
-                    # get it wrong.
-                    "detail": (
-                        f"Due {_local(run['due_at'], run['outlet_timezone'])} plus "
-                        f"{run['grace_minutes']} minutes grace. Never started."
-                    ),
-                },
-            )
-            marked.append(
-                {
-                    "run_id": str(run["id"]),
-                    "outlet": run["outlet_code"],
-                    "template": run["template_name"],
-                    "business_date": str(run["business_date"]),
-                }
-            )
-        await db.commit()
-        return {"marked_missed": len(marked), "runs": marked}
+                    select p.outlet_id, p.business_date, 'medium', p.title, p.detail
+                      from unnest(
+                               cast(:ids as uuid[]), cast(:outlet_ids as uuid[]),
+                               cast(:business_dates as date[]),
+                               cast(:titles as text[]), cast(:details as text[])
+                           ) as p(id, outlet_id, business_date, title, detail)
+                      join flipped f on f.id = p.id
+                )
+                select id from flipped
+                """
+            ),
+            {
+                "ids": [run["id"] for run in overdue],
+                "outlet_ids": [run["outlet_id"] for run in overdue],
+                "business_dates": [run["business_date"] for run in overdue],
+                "titles": [f"Missed: {run['template_name']}" for run in overdue],
+                # Rendered in the outlet's own timezone. A manager in
+                # Kolkata reading "19:00 UTC" has to do arithmetic to find
+                # out whether the closing checklist was skipped, and will
+                # get it wrong.
+                "details": [
+                    f"Due {_local(run['due_at'], run['outlet_timezone'])} plus "
+                    f"{run['grace_minutes']} minutes grace. Never started."
+                    for run in overdue
+                ],
+            },
+        )
+    }
+    await db.commit()
+    marked = [
+        {
+            "run_id": str(run["id"]),
+            "outlet": run["outlet_code"],
+            "template": run["template_name"],
+            "business_date": str(run["business_date"]),
+        }
+        for run in overdue
+        if run["id"] in flipped_ids
+    ]
+    return {"marked_missed": len(marked), "runs": marked}
 
-    return await run_job(MARK_MISSED, body, triggered_by=triggered_by)
+
+async def mark_missed(*, triggered_by: uuid.UUID | None = None) -> dict[str, Any]:
+    return await run_job(MARK_MISSED, sweep_overdue, triggered_by=triggered_by)
 
 
 # ---------------------------------------------------------------------------

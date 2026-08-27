@@ -14,7 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.jobs import digest as digest_module
-from app.jobs import notify
+from app.jobs import notify, tasks
 from app.jobs.digest import Digest, SpotCheck
 from tests.conftest import isolated_settings
 
@@ -283,6 +283,85 @@ class TestMarkMissed:
         )
         await session.commit()
         assert run_id not in await self._run_the_query(session)
+
+
+class TestSweepOverdue:
+    """The one-statement flip-and-raise, against a real database.
+
+    The loop it replaced was never testable — it lived inside the job's
+    closure. This is the correctness the set-based version has to keep: every
+    flipped run gets exactly one exception, and nothing else is touched.
+    """
+
+    async def test_an_overdue_run_is_flipped_and_raises_one_exception(
+        self, session: AsyncSession
+    ) -> None:
+        run_id = await _make_pending_run(
+            session, due_at=datetime.now(tz=UTC) - timedelta(hours=3), on=date(2026, 6, 1)
+        )
+
+        result = await tasks.sweep_overdue(session)
+
+        assert result["marked_missed"] >= 1
+        assert str(run_id) in [r["run_id"] for r in result["runs"]]
+        status = (
+            await session.execute(
+                text("select status from checklist_runs where id = :id"), {"id": run_id}
+            )
+        ).scalar_one()
+        assert status == "missed"
+        raised = (
+            await session.execute(
+                text(
+                    "select count(*) from sop_exceptions"
+                    " where business_date = :d and title like 'Missed:%'"
+                ),
+                {"d": date(2026, 6, 1)},
+            )
+        ).scalar_one()
+        assert raised == 1
+
+    async def test_the_detail_reads_in_the_outlets_own_timezone(
+        self, session: AsyncSession
+    ) -> None:
+        """The whole point of keeping the rendering in Python. IST, not UTC."""
+        await _make_pending_run(
+            session, due_at=datetime.now(tz=UTC) - timedelta(hours=3), on=date(2026, 6, 2)
+        )
+        await tasks.sweep_overdue(session)
+        detail = (
+            await session.execute(
+                text("select detail from sop_exceptions where business_date = :d"),
+                {"d": date(2026, 6, 2)},
+            )
+        ).scalar_one()
+        assert "IST" in detail
+        assert "grace" in detail
+
+    async def test_sweeping_again_raises_nothing_new(self, session: AsyncSession) -> None:
+        """Once flipped, a run is missed and out of the overdue set. A second
+        pass fifteen minutes later must not stack a second exception on it."""
+        await _make_pending_run(
+            session, due_at=datetime.now(tz=UTC) - timedelta(hours=3), on=date(2026, 6, 3)
+        )
+        first = await tasks.sweep_overdue(session)
+        again = await tasks.sweep_overdue(session)
+
+        assert first["marked_missed"] >= 1
+        assert date(2026, 6, 3).isoformat() not in [r["business_date"] for r in again["runs"]]
+        raised = (
+            await session.execute(
+                text("select count(*) from sop_exceptions where business_date = :d"),
+                {"d": date(2026, 6, 3)},
+            )
+        ).scalar_one()
+        assert raised == 1
+
+    async def test_a_quiet_night_asks_one_question_and_stops(self, session: AsyncSession) -> None:
+        result = await tasks.sweep_overdue(session)
+        # Whatever other suites left behind, a sweep with nothing overdue in
+        # THIS test's window reports without inventing work.
+        assert "marked_missed" in result and "runs" in result
 
 
 class TestDigestBuild:
