@@ -20,8 +20,8 @@ restaurant group in Kolkata. Stage 1 delivers three things:
 3. **Sales ingestion skeleton** — not built yet (P9).
 
 The governing specification is `docs/STAGE1_SPEC.md` (present in both repos).
-It is the contract. Where this build deviates from it — and it does, in fourteen
-places — every deviation is recorded in `docs/DECISIONS.md` as D1–D14 with its
+It is the contract. Where this build deviates from it — and it does, in fifteen
+places — every deviation is recorded in `docs/DECISIONS.md` as D1–D15 with its
 reasoning. **Read DECISIONS.md before proposing any change**; several
 "obvious improvements" are things that were deliberately decided against.
 
@@ -123,7 +123,7 @@ goes through FastAPI, which holds the service role.
 
 ---
 
-## 4. The fourteen decisions (D1–D14)
+## 4. The fifteen decisions (D1–D15)
 
 Full text in `docs/DECISIONS.md`. Summary, because each one will look like a
 mistake until you know why:
@@ -140,6 +140,7 @@ mistake until you know why:
 | **D9** | `app_settings` is **append-only with an effective date**. The value in force at a moment is the newest row at-or-before it, outlet override beating global. Historical scores stay reproducible. The registry in `app/core/settings_registry.py` owns each key's type/default/range. |
 | **D10** | Inventory catalogue pulled into Stage 1: ONE shared catalogue, levels per outlet. 151 items seeded from the real count sheets. |
 | **D11** | **Template item versioning.** Any material item edit bumps `checklist_templates.version` AND snapshots every item into `checklist_template_item_versions`, in one transaction. Runs point at the exact version they were answered against, so an admin flipping `is_critical` today cannot retroactively make past runs look like critical failures. |
+| **D15** | **Sales is orders only, and the uploader picks the outlet.** No Petpooja item export carries a bill number — all four were checked — so `sales_order_items` cannot be filled and is deliberately left empty. Idempotency is on the file's bytes, not its name. Overlapping exports upsert. Written set-at-a-time: the per-row loop took 75s for 452 bills, the `unnest` upsert takes 5.4s. |
 | **D14** | **No blended health score yet.** Spec section 5's four pillars sum to 100; Stage 1 has one of them. The SOP score is the headline and the other three are greyed — `0.30 x SOP` would read as 27/100 for a perfect outlet, and rescaling would make the number jump the day a second pillar lands. Also: a component with no denominator contributes 0 rather than being re-weighted out; nothing scheduled is *no score*, not zero; the critical-failure cap holds the BAND at amber and leaves the number honest. |
 | **D13** | **A second vision provider, testing only.** `AI_REVIEW_PROVIDER` picks `anthropic` (default, production) or `groq`. Same prompt, same question, different transport; the model that actually answered is stored on every verdict. Groq's only image-capable model is `qwen/qwen3.8-27b` and its free tier is 8000 TPM, which two photos exhaust — so a 429 is a first-class "no verdict". |
 | **D12** | **What P7 decided for itself.** Six rules, each of which looks arbitrary until you know why: a flag carries its evidence (`integrity_detail`); run-level flags live on the run, not stamped onto each photo; each pass clears only its own flags; `mark_missed` never touches `in_progress`; the AI confidence threshold is applied at READ time and `ai_mismatch` fires in one direction only; notifications degrade **loudly**. Vision model is `claude-sonnet-5` by the owner's decision. |
@@ -266,10 +267,10 @@ this workflow. Read the file, run it inside a transaction with asyncpg using
 
 ---
 
-## 7. What is built (P0–P8)
+## 7. What is built (P0–P9)
 
-**73 API operations across 58 paths. 294 backend tests, 49 frontend tests.
-25 tables, 13 migrations. All live on Supabase.**
+**78 API operations across 62 paths. 354 backend tests, 68 frontend tests.
+25 tables, 14 migrations. All live on Supabase, and CI is green.**
 
 - **P0** Scaffold both repos, CI, tooling.
 - **P1** Schema (12 migrations), RLS, indexes, seed: 2 outlets, 6 categories,
@@ -301,6 +302,9 @@ this workflow. Read the file, run it inside a transaction with asyncpg using
 - **P8** The compliance dashboard: the outlet formula from spec 4.3, one shared
   counter behind it and the digest, and the four-pillar card with three pillars
   greyed. See D14.
+- **P9** Sales ingestion. A versioned Petpooja adapter, upload idempotent by
+  content hash, background parse to `sales_orders`, and the raw table view.
+  Migration 0014. See D15.
 
 There is **real data** in the system now: 66 runs across four business dates in
 several states, 30 exceptions, 16 job runs, real JPEGs in storage with pHashes,
