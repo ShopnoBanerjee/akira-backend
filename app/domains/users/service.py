@@ -76,10 +76,9 @@ async def get_me(db: AsyncSession, user: CurrentUser) -> MeResponse:
                 label=user.device.label,
             ),
         )
-    profile = await repository.get_profile(db, user.profile_id)
+    profile = await repository.get_profile_and_touch(db, user.profile_id)
     if profile is None:
         raise NotFoundError("Your profile could not be found.")
-    await repository.touch_last_seen(db, user.profile_id)
     await db.commit()
     return _to_me(user, profile)
 

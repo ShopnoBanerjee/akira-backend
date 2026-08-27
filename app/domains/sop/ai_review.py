@@ -284,21 +284,25 @@ async def _enabled_for_run(db: AsyncSession, run_id: uuid.UUID) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def latest_for_run(db: AsyncSession, run_id: uuid.UUID) -> dict[uuid.UUID, dict[str, Any]]:
+async def latest_for_run(
+    db: AsyncSession, run_id: uuid.UUID, *, outlet_id: uuid.UUID | None = None
+) -> dict[uuid.UUID, dict[str, Any]]:
     """The newest verdict per item, with the threshold already applied.
 
     Keyed by run item so the review endpoint can attach one to each row.
+
+    Pass `outlet_id` when you have it. The confidence threshold is
+    outlet-overridable, so this needs to know which outlet — and looking it up
+    from the run is a round trip the review endpoint had already spent.
     """
-    outlet_id = (
-        await db.execute(
-            text("select outlet_id from checklist_runs where id = :id"), {"id": run_id}
-        )
-    ).scalar()
-    threshold = await resolve_float(
-        db,
-        "ai_review.uncertain_below_confidence",
-        outlet_id=uuid.UUID(str(outlet_id)) if outlet_id else None,
-    )
+    if outlet_id is None:
+        raw = (
+            await db.execute(
+                text("select outlet_id from checklist_runs where id = :id"), {"id": run_id}
+            )
+        ).scalar()
+        outlet_id = uuid.UUID(str(raw)) if raw else None
+    threshold = await resolve_float(db, "ai_review.uncertain_below_confidence", outlet_id=outlet_id)
     rows = (
         (
             await db.execute(

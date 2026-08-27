@@ -30,7 +30,7 @@ from app.core.business_date import business_date_bounds, outlet_now
 from app.core.deps import CurrentUser, CurrentUserDep, DbDep, require_management
 from app.core.errors import ForbiddenError, NotFoundError
 from app.core.scoring import ScoreWeights, outlet_score
-from app.core.settings_value import resolve_many
+from app.core.settings_value import resolve_many, resolve_many_outlets
 from app.domains.sop import metrics
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -58,6 +58,18 @@ _WEIGHT_KEYS = [
 ]
 
 
+def _weights(values: dict[str, Any]) -> ScoreWeights:
+    return ScoreWeights(
+        run_score=float(values["scoring.weight.run_score"]),
+        completion_rate=float(values["scoring.weight.completion_rate"]),
+        on_time_rate=float(values["scoring.weight.on_time_rate"]),
+        stale_exception_penalty=float(values["scoring.penalty.stale_exception"]),
+        integrity_flag_penalty=float(values["scoring.penalty.integrity_flag"]),
+        green=float(values["scoring.band.green"]),
+        amber=float(values["scoring.band.amber"]),
+    )
+
+
 async def _weights_at(db: AsyncSession, *, outlet_id: uuid.UUID, end: date) -> ScoreWeights:
     """The weights that were in force at the end of the period.
 
@@ -68,16 +80,16 @@ async def _weights_at(db: AsyncSession, *, outlet_id: uuid.UUID, end: date) -> S
     # The instant that trading day closed: the 05:00 rollover on the next
     # calendar day, in the outlet's own zone.
     _, closed_at = business_date_bounds(end)
-    values = await resolve_many(db, _WEIGHT_KEYS, outlet_id=outlet_id, at=closed_at)
-    return ScoreWeights(
-        run_score=float(values["scoring.weight.run_score"]),
-        completion_rate=float(values["scoring.weight.completion_rate"]),
-        on_time_rate=float(values["scoring.weight.on_time_rate"]),
-        stale_exception_penalty=float(values["scoring.penalty.stale_exception"]),
-        integrity_flag_penalty=float(values["scoring.penalty.integrity_flag"]),
-        green=float(values["scoring.band.green"]),
-        amber=float(values["scoring.band.amber"]),
-    )
+    return _weights(await resolve_many(db, _WEIGHT_KEYS, outlet_id=outlet_id, at=closed_at))
+
+
+async def _weights_at_many(
+    db: AsyncSession, *, outlet_ids: list[uuid.UUID], end: date
+) -> dict[uuid.UUID, ScoreWeights]:
+    """The same, for every outlet on the comparison row, in one round trip."""
+    _, closed_at = business_date_bounds(end)
+    per_outlet = await resolve_many_outlets(db, _WEIGHT_KEYS, outlet_ids=outlet_ids, at=closed_at)
+    return {outlet: _weights(values) for outlet, values in per_outlet.items()}
 
 
 class OutletHealthRow(BaseModel):
@@ -140,11 +152,20 @@ async def outlet_scores(
     """The comparison row across outlets. Ordered by code, not by score — a
     league table invites gaming the number rather than doing the work."""
     start, end = _period(days, to)
+    outlets = await _visible_outlets(db, user, None)
+    if not outlets:
+        return []
+
+    # Three round trips total, whatever the outlet count. The loop that was
+    # here made three per outlet, so this screen got slower as the group grew —
+    # the one thing a multi-outlet comparison must not do.
+    ids = [outlet["id"] for outlet in outlets]
+    counts = await metrics.outlet_counts_many(db, outlet_ids=ids, start=start, end=end)
+    weights = await _weights_at_many(db, outlet_ids=ids, end=end)
+
     out = []
-    for outlet in await _visible_outlets(db, user, None):
-        counts = await metrics.outlet_counts(db, outlet_id=outlet["id"], start=start, end=end)
-        weights = await _weights_at(db, outlet_id=outlet["id"], end=end)
-        score = outlet_score(counts, weights)
+    for outlet in outlets:
+        score = outlet_score(counts[outlet["id"]], weights[outlet["id"]])
         out.append(
             OutletHealthRow(
                 outlet_id=outlet["id"],

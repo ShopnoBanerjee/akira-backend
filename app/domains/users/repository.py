@@ -28,11 +28,59 @@ _UPDATE_PROFILE = text(
     """
 )
 
-_TOUCH_LAST_SEEN = text("update profiles set last_seen_at = now() where id = :profile_id")
+#: How stale `last_seen_at` is allowed to get before a read refreshes it.
+#: The column answers "is this person still around", which five minutes settles
+#: as well as five seconds.
+LAST_SEEN_STALE_MINUTES = 5
+
+#: Reading your own profile and recording that you were here, in one statement.
+#:
+#: Two things were wrong with doing it in two. It cost a second round trip on
+#: the first call after every sign-in, and it wrote a row to `profiles` on
+#: *every* request that touched it — a dead tuple and an index update each
+#: time, to move a timestamp by a few hundred milliseconds. The update now only
+#: fires when the stored value has actually gone stale.
+#:
+#: The select reads the row as it was before the update, so `last_seen_at`
+#: comes back as of the previous visit rather than this instant. That is the
+#: more useful reading of the field, and it is what a separate select would
+#: have returned anyway if it had run first.
+_SELECT_PROFILE_AND_TOUCH = text(
+    """
+    with touched as (
+        update profiles
+           set last_seen_at = now()
+         where id = :profile_id
+           and deleted_at is null
+           and (last_seen_at is null
+                or last_seen_at < now() - make_interval(mins => :stale_minutes))
+    )
+    select id, full_name, phone, employee_code, global_role, is_active,
+           pin_hash is not null as has_pin
+      from profiles
+     where id = :profile_id
+       and deleted_at is null
+    """
+)
 
 
 async def get_profile(db: AsyncSession, profile_id: uuid.UUID) -> dict[str, Any] | None:
     row = (await db.execute(_SELECT_PROFILE, {"profile_id": profile_id})).mappings().first()
+    return dict(row) if row else None
+
+
+async def get_profile_and_touch(db: AsyncSession, profile_id: uuid.UUID) -> dict[str, Any] | None:
+    """Your own profile, recording the visit in the same round trip."""
+    row = (
+        (
+            await db.execute(
+                _SELECT_PROFILE_AND_TOUCH,
+                {"profile_id": profile_id, "stale_minutes": LAST_SEEN_STALE_MINUTES},
+            )
+        )
+        .mappings()
+        .first()
+    )
     return dict(row) if row else None
 
 
@@ -54,10 +102,6 @@ async def update_profile(
         .first()
     )
     return dict(row) if row else None
-
-
-async def touch_last_seen(db: AsyncSession, profile_id: uuid.UUID) -> None:
-    await db.execute(_TOUCH_LAST_SEEN, {"profile_id": profile_id})
 
 
 _LIST_USERS = """

@@ -495,6 +495,98 @@ hourly Item Sale Report for that day.
 
 ---
 
+## D16 — Latency is round trips, so round trips are what we cut (P10)
+
+Every endpoint took over a second. The instinct was to blame the queries. It
+was measured instead, and the queries were never the problem:
+
+    TCP handshake, Kolkata to Supabase's Mumbai region ... 152 ms
+    `select 1` on an already-open connection ............. 151 ms
+    what Postgres spends executing it (EXPLAIN ANALYZE) .. 0.1-0.2 ms
+
+The database answers in a fifth of a millisecond and the wire costs 152. So
+response time is very nearly `152 ms x (number of times this request talks to
+Supabase)`, and every fix below is about that multiplier and nothing else.
+
+**True millisecond fetches are not reachable from a laptop in Kolkata.** They
+are reachable in production, where the API sits in the same region as the
+database and that 152 ms becomes about 1 ms — but only if the trip *count* is
+low, which is the part that is fixed here and would otherwise have shipped.
+
+### What was actually costing trips
+
+| Cause | Cost |
+|---|---|
+| `pool_pre_ping=True` | a liveness round trip before every request |
+| a transaction around read-only requests | `BEGIN` + `ROLLBACK`, 2 trips |
+| three separate auth queries per request | 3 trips before the handler ran |
+| a new `httpx.AsyncClient` per signed URL | a fresh TLS handshake each time |
+| signing photo URLs one at a time, serially | 1 HTTPS call per photo |
+| the dashboard looping over outlets | 3 trips per outlet |
+| `update profiles set last_seen_at` | a write on every authenticated request |
+
+### What replaced them
+
+`pool_pre_ping` is gone and `pool_recycle` is 240 s — shorter than any
+plausible idle timeout, which is the guarantee the ping was buying at the price
+of a round trip. **GET and HEAD get an autocommit session** (`db.py`), chosen by
+method in one place rather than by a second dependency on every read route; a
+single `SELECT` is atomic without a transaction. The trade is that several
+reads in one handler no longer share a snapshot — invisible for these screens,
+and the handlers that most needed consistency are the ones now down to a single
+statement anyway.
+
+**One identity query** (`deps.py`) via `left join lateral` + `json_agg`, where
+there were three. **One signing request** for every photo on a screen, through
+Storage's batch endpoint, on a client that stays open. **One statement for all
+outlets** on the dashboard, via `unnest` of the outlet ids — the loop meant the
+comparison screen got slower as the group grew, which is the one thing a
+multi-outlet comparison must not do. `last_seen_at` is folded into the profile
+read and only written when it has actually gone stale; it was producing a dead
+tuple and an index update per request to move a timestamp by milliseconds.
+
+### Measured, best of three, warm, against the live system
+
+| endpoint | before | after |
+|---|---:|---:|
+| `/sop/runs/{id}/detail` | 4889 ms | 1883 ms |
+| `/dashboard/outlets` | 2761 ms | 823 ms |
+| `/sop/reference-photos` | 2410 ms | 834 ms |
+| `/sop/runs` | 1678 ms | 420 ms |
+| `/settings` | 1360 ms | 430 ms |
+| **all eleven** | **22.4 s** | **7.7 s** |
+
+The worst endpoint went from 9 SQL statements and 2 serial HTTPS calls to
+**4 statements and 1**. Most list endpoints now sit at two round trips — one to
+authenticate, one to answer — which is the floor without caching identity.
+
+### What was rejected
+
+**supabase-py instead of SQLAlchemy.** Benchmarked head to head rather than
+argued about:
+
+| operation | asyncpg | supabase-py |
+|---|---:|---:|
+| one row by id | 152 ms | 343 ms |
+| 452 sales_orders rows | 160 ms | 378 ms |
+| `count(*)` | 152 ms | 330 ms |
+| `group by business_date` | 154 ms | *cannot express* |
+
+It is ~2.2x slower, because PostgREST is an HTTP hop *in front of* the same
+152 ms wire, not instead of it. It also cannot express the queries this app is
+built on — grouped aggregates, `count(*) filter (...)`, the `unnest` upsert,
+the lateral-join identity query — so each would have become a database function
+called by RPC: the same SQL, moved out of migrations and behind an extra hop.
+And it would put a second data path beside the API, which is the "two
+half-backends" failure CLAUDE.md warns about twice.
+
+**Caching the identity lookup.** It would take most endpoints from two trips to
+one, and it is the obvious next move — but a cached role or membership is a
+stale authorisation decision, and that is not a trade to make casually or late
+at night. Left for a deliberate change with an explicit invalidation story.
+
+---
+
 ## Assumptions in force — challenge these if wrong
 
 - **A1 — `ops_manager` approves outlet-manager submissions.** Spec open question

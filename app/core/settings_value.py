@@ -31,6 +31,7 @@ __all__ = [
     "resolve_float",
     "resolve_int",
     "resolve_many",
+    "resolve_many_outlets",
     "resolve_time",
 ]
 
@@ -98,6 +99,52 @@ async def resolve_many(
     # rather than a KeyError three frames away in the caller.
     for key in keys:
         resolved.setdefault(key, REGISTRY[key].default)
+    return resolved
+
+
+async def resolve_many_outlets(
+    db: AsyncSession,
+    keys: list[str],
+    *,
+    outlet_ids: list[uuid.UUID],
+    at: datetime | None = None,
+) -> dict[uuid.UUID, dict[str, Any]]:
+    """The same keys, resolved separately for each outlet, in one round trip.
+
+    Each outlet still gets its own answer — that is the whole point of an
+    override — but the dashboard was asking for them one outlet at a time,
+    which is a round trip per outlet to resolve seven constants. Cross-joining
+    the two unnests lets Postgres evaluate the lot in one pass.
+    """
+    if not outlet_ids:
+        return {}
+    unknown = [k for k in keys if k not in REGISTRY]
+    if unknown:
+        raise KeyError(f"Not declared settings: {', '.join(sorted(unknown))}")
+    rows = (
+        await db.execute(
+            text(
+                """
+                select o as outlet_id,
+                       k as key,
+                       setting_value(k, o,
+                                     coalesce(cast(:at as timestamptz), now())) as value
+                  from unnest(cast(:ids as uuid[])) as o
+                  cross join unnest(cast(:keys as text[])) as k
+                """
+            ),
+            {"keys": keys, "ids": outlet_ids, "at": at},
+        )
+    ).mappings()
+    resolved: dict[uuid.UUID, dict[str, Any]] = {o: {} for o in outlet_ids}
+    for row in rows:
+        value = _decode(row["value"])
+        outlet = uuid.UUID(str(row["outlet_id"]))
+        key = row["key"]
+        resolved[outlet][key] = REGISTRY[key].default if value is None else value
+    for per_outlet in resolved.values():
+        for key in keys:
+            per_outlet.setdefault(key, REGISTRY[key].default)
     return resolved
 
 
