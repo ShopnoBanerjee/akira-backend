@@ -30,6 +30,9 @@ dependencies = [
     "apscheduler>=3.10.4",
     # The advisory vision review (D6).
     "anthropic>=0.40.0",
+    # Petpooja exports arrive as .xlsx. read_only mode streams rows rather than
+    # building the whole sheet in memory — a year of orders is not small.
+    "openpyxl>=3.1.5",
 ]
 
 [dependency-groups]
@@ -74,7 +77,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["^tests/"]
 
 [[tool.mypy.overrides]]
-module = ["jose.*", "asyncpg.*", "apscheduler.*", "imagehash.*"]
+module = ["jose.*", "asyncpg.*", "apscheduler.*", "imagehash.*", "openpyxl.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------
