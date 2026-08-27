@@ -526,8 +526,13 @@ never-guess parser and calibrated mapper (D17), review/confirm/requisition
 APIs, and the frontend screens (/app/inventory/counts). Verified against the
 real 8-page requisition PDF: 147 lines, 146 exact-mapped, kitchen conventions
 parsed, refusals attached, one line resolved through the UI and traced in the
-database. Extraction currently runs on the Groq fallback (STOCK_EXTRACT_PROVIDER)
-with every line review-bound; the production path needs ANTHROPIC_API_KEY.
+database. Extraction and photo review both run on Gemini
+(gemini-3-flash-preview, free tier) — chosen by golden-set measurement, D18:
+100% cell accuracy and zero row-shifts against Groq's 83% with six. On the
+real sheet the review load fell from 147/147 lines to 41, and nearly all 41
+are the parser refusing genuine kitchen ambiguity ("1pk" written on gram
+items) — questions only a human can answer, once, after which aliases and
+par config make them stop recurring.
 
 Stage 1 is code-complete as of P10. What remains before real use is not code:
 rotate the Groq key, set SMTP, capture reference standards outlet by outlet,
