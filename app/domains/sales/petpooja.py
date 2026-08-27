@@ -129,6 +129,10 @@ class ParseResult:
     period_end: date | None = None
     restaurant: str | None = None
     adapter_version: str = ORDERS_ADAPTER_VERSION
+    #: The Net Sales figure from the export's own Total row, in paise. What
+    #: the file CLAIMS it adds up to, kept apart from what we derived so a
+    #: disagreement is a visible column pair, not a recomputation by hand.
+    reported_net_paise: int | None = None
 
     @property
     def net_paise(self) -> int:
@@ -262,13 +266,23 @@ def parse_orders(data: bytes, *, hash_phone: Callable[[str], str] | None = None)
 
     orders: list[ParsedOrder] = []
     seen: set[str] = set()
+    reported_net: int | None = None
 
     for index, row in enumerate(rows[header_at + 1 :], start=header_at + 2):
         if not row or all(cell is None or str(cell).strip() == "" for cell in row):
             continue
         if _is_summary(row[0]):
             # The file's own Total/Min/Max/Avg. Ingesting these as bills is the
-            # single most damaging mistake this parser could make.
+            # single most damaging mistake this parser could make — but the
+            # Total row's Net Sales is worth keeping: it is the export's own
+            # claim, stored beside our sum so a disagreement is visible.
+            if str(row[0] or "").strip().lower() == "total" and reported_net is None:
+                raw = _cell(row, at, "net")
+                if raw is not None and str(raw).strip() != "":
+                    try:
+                        reported_net = to_paise(raw)
+                    except (ValueError, ArithmeticError):
+                        warnings.append({"kind": "bad_total_row", "row": index})
             continue
 
         def cell(key: str, _row: tuple[Any, ...] = row) -> Any:
@@ -338,4 +352,5 @@ def parse_orders(data: bytes, *, hash_phone: Callable[[str], str] | None = None)
         period_start=period_start,
         period_end=period_end,
         restaurant=restaurant,
+        reported_net_paise=reported_net,
     )

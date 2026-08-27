@@ -8,7 +8,7 @@ are deciding what to pick up.
 This is not a bug list. Nothing here is broken; broken things get fixed, not
 filed. It is the set of deliberate gaps, and it should shrink.
 
-Last reviewed: 27 Aug 2026, after P9a.
+Last reviewed: 27 Aug 2026, at the close of P10.
 
 **Keep it honest.** When you close one, delete the entry rather than marking it
 done — the file is only useful if everything in it is still true. When you open
@@ -88,39 +88,18 @@ pre-aggregated. There is nothing to hang `order_id` on (D15).
 Nothing in Stage 1 reads the table. The Sales pillar of the health card is
 Stage 2, and it needs bill-level totals, which `sales_orders` has.
 
-**Unblocked by:** finding out whether this Petpooja plan can export an
-order-wise or bill-wise item report. If it can, that is a second adapter beside
-`petpooja.orders.v1` and a straightforward one. If it cannot, the decision to
-make later is whether item-level analysis is worth relaxing `order_id` and
-storing period aggregates under a table whose name would stop describing its
-contents.
+**Partially unblocked, 27 Aug 2026.** The Order Listing report (checked
+against a real export) DOES carry a bill number — `Order No.` — with an
+`Items` column beside it. But the column is a comma-joined list of item
+*names*: no per-line quantity, no per-line price. So `sales_order_items`
+still cannot be filled honestly from it — a name appearing once could be
+quantity three.
 
----
-
-## Housekeeping, queued for P10
-
-### Six photos will never verify
-
-The photos uploaded during P5 and P6 are 262-byte stubs, not decodable images.
-They carry plausible `photo_bytes` values, which is why nobody noticed until
-P7 downloaded one. `process_photo` raises `UndecodableImage` on them, the
-failure lands in `job_runs`, and the item stays unprocessed — which the review
-screen shows as "not checked yet" rather than clean. That is the honest
-rendering, and it is permanent for these six.
-
-**Unblocked by:** deciding whether to clear `photo_path` on those rows (the
-runs then read as photoless, which is also true) or to leave them as a visible
-scar. Do it as part of the P10 seed refresh, not before.
-
-### Two business dates were materialised by hand
-
-2026-08-25 and 2026-08-28 were created during P7 testing rather than by the
-05:00 job. 08-25 is almost entirely `missed`, because nothing was ever going to
-be done on a day invented after the fact. Any dashboard period spanning it
-reads worse than the outlet deserves.
-
-**Unblocked by:** the P10 realistic 8-week seed dataset, which should replace
-this data wholesale rather than patch it.
+**Unblocked by:** a Stage 2 decision. The workable shape is names-per-bill
+from Order Listing (a `petpooja.listing.v1` adapter) with quantities left
+null, reconciled per period against the Item Wise report's totals — or
+finding a Petpooja export that carries true bill line items, which none of
+the five report types checked so far does.
 
 ---
 

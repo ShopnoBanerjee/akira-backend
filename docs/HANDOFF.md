@@ -267,9 +267,9 @@ this workflow. Read the file, run it inside a transaction with asyncpg using
 
 ---
 
-## 7. What is built (P0–P9)
+## 7. What is built (P0–P10)
 
-**78 API operations across 62 paths. 354 backend tests, 68 frontend tests.
+**78 API operations across 62 paths. 391 backend tests, 68 frontend tests.
 25 tables, 14 migrations. All live on Supabase, and CI is green.**
 
 - **P0** Scaffold both repos, CI, tooling.
@@ -305,17 +305,25 @@ this workflow. Read the file, run it inside a transaction with asyncpg using
 - **P9** Sales ingestion. A versioned Petpooja adapter, upload idempotent by
   content hash, background parse to `sales_orders`, and the raw table view.
   Migration 0014. See D15.
+- **P10** Hardening. Latency cut 3–5× by cutting round trips (D16 — measured,
+  not guessed: the wire is 152 ms and Postgres is 0.2 ms). The RLS suite that
+  attacks the policies as a leaked key would (`test_rls.py`). The N+1 audit
+  (two fixed, one with a real race; three recorded non-findings). SECURITY.md,
+  RUNBOOK.md, and `scripts/seed_history.py` — eight weeks of coherent demo
+  history built through the real materialiser, scorer and photo pass.
 
-There is **real data** in the system now: 66 runs across four business dates in
-several states, 30 exceptions, 16 job runs, real JPEGs in storage with pHashes,
-one reference standard at New Town, and a run that genuinely carries
-`duplicate_photo`, `too_dark`, `out_of_geofence` and `burst_upload`. Do not
-wipe it — it is what makes P8 testable, and reproducing it takes an hour.
-
-**Two caveats on that data.** The six photos uploaded during P5/P6 are
-262-byte stubs, not decodable images; they will never hash and show as "not
-checked". And business dates 2026-08-25 and 2026-08-28 were materialised by
-hand while testing, so 08-25 is almost entirely `missed`.
+There is **real history** in the system now, seeded by
+`scripts/seed_history.py` on 27 Aug: ~850 runs across eight weeks
+(2026-07-01 onward) for both outlets, 212 decodable photos processed by the
+real photo pass (including a planted duplicate pair and a too-dark shot at
+DEV02, both caught), 97 late runs with real integrity flags, exceptions in
+every state, and synthetic-but-labelled DEV02 sales beside NT01's REAL
+Petpooja data (467 bills through 27 Aug, whose export's own Total matches
+our parse to the paisa — `reported_net_paise` = `parsed_net_paise`). Business
+date 2026-08-27 carries genuine artifacts: real photos and the two real Groq
+verdicts. The old caveats (stub photos, hand-materialised dates) were wiped
+with the reseed. To rebuild: the script is deterministic — read its docstring,
+rehearse locally first.
 
 ---
 
@@ -510,32 +518,16 @@ thinking, the model IDs — is not what a training prior will tell you.
 
 ---
 
-## 10. NEXT: P9 — sales ingestion
+## 10. NEXT: Stage 2
 
-P8 is done. `app/core/scoring.py` holds the outlet formula from spec 4.3,
-`app/domains/sop/metrics.py` is the single counter behind both the dashboard
-and the daily digest, and `/dashboard/outlet-health` renders the four-pillar
-card with three pillars greyed (D14).
+Stage 1 is code-complete as of P10. What remains before real use is not code:
+rotate the Groq key, set SMTP, capture reference standards outlet by outlet,
+and replace the test PINs — all tracked with unblockers in
+`docs/OPEN_ITEMS.md`, with the security posture in `docs/SECURITY.md` and the
+operational manual in `docs/RUNBOOK.md`.
 
-**P9 is the Petpooja XLSX upload.** Real exports are in the user's Downloads
-folder (`Orders_Master_Report_2026_08_25_*.xlsx`,
-`Item_Sale_Report_Hourly_Wise_*.xlsx`). Two acceptance facts to hit:
+### The road
 
-- totals reconcile to **Rs 4,86,076 across 452 orders**;
-- a bill at **00:45 on 23 Aug lands on business_date 2026-08-22**. This is the
-  rollover doing its job, and it is the single most likely thing to get wrong.
-
-Parsing never runs in a request — it is a background task recorded to
-`job_runs`, like the photo passes. `A2` says manual upload for all of Stage 1;
-`api_source.py` ships as a documented stub.
-
-### After P9
-
-- **P10** Hardening: security review table, an RLS cross-outlet pytest, N+1
-  audit, realistic 8-week seed dataset, RUNBOOK.md. Housekeeping that belongs
-  here: the 262-byte stub photos from P5/P6, and the hand-materialised business
-  dates 2026-08-25 and 2026-08-28. (The three leftover test outlets are already
-  soft-deleted and filtered out of every picker — checked, not assumed.)
 - **Stage 2** starts with the inventory/requisition engine. A real requisition
   PDF is already supplied for testing the AI extraction:
   `tests/fixtures/requisition_27aug2026.pdf`. The rule that carries over: **the

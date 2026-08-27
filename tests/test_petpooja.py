@@ -226,6 +226,23 @@ class TestShape:
         assert result.net_paise == 25000
         assert all(o.external_bill_no == "1" for o in result.orders)
 
+    def test_the_files_own_total_is_kept_beside_our_sum(self) -> None:
+        """The Total row is skipped as a bill but its Net Sales is recorded —
+        it is the export's own claim, and a disagreement between it and our
+        sum should be a visible column pair, not a hand recomputation.
+
+        The gap this pins down: the 0014 column existed for two epics with
+        nothing filling it, found only when a fresh export arrived."""
+        result = parse_orders(export([bill("1", "2026-08-25 20:00:00", net=250.0)]))
+        # The builder's summary Total says 999999.0 — deliberately NOT the sum
+        # of the bills, so this also proves the two numbers are independent.
+        assert result.reported_net_paise == 99999900
+        assert result.net_paise == 25000
+
+    def test_no_total_row_means_no_claim(self) -> None:
+        result = parse_orders(export([bill("1", "2026-08-25 20:00:00")], with_summary=False))
+        assert result.reported_net_paise is None
+
     def test_it_finds_the_header_wherever_it_sits(self) -> None:
         """The preamble length already differs between Petpooja report types,
         so the header is searched for rather than assumed at a fixed offset."""

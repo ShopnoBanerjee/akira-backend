@@ -244,6 +244,7 @@ async def parse_upload(db: AsyncSession, upload_id: uuid.UUID) -> dict[str, Any]
                    warnings = cast(:warnings as jsonb),
                    adapter_version = :adapter,
                    parsed_net_paise = :net,
+                   reported_net_paise = :reported,
                    parsed_at = now(),
                    error_detail = null
              where id = :id
@@ -256,6 +257,7 @@ async def parse_upload(db: AsyncSession, upload_id: uuid.UUID) -> dict[str, Any]
             "end": result.period_end,
             "warnings": json.dumps(result.warnings, default=str),
             "adapter": result.adapter_version,
+            "reported": result.reported_net_paise,
             "net": result.net_paise,
         },
     )
