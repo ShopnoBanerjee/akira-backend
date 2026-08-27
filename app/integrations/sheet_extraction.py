@@ -235,16 +235,22 @@ async def _extract_gemini(image_bytes: bytes, *, vocabulary: list[str]) -> PageR
         },
     }
     started = time.monotonic()
-    async with httpx.AsyncClient(timeout=240) as client:
-        # The preview model rides demand spikes (503) and the free tier rate
-        # limits (429). Both are temporary by definition; waiting them out IS
-        # the policy, same as the Groq branch.
+    async with httpx.AsyncClient(timeout=300) as client:
+        # The preview model rides demand spikes: 503s, 429s on the free tier,
+        # and occasionally a request that simply never answers. All three are
+        # temporary by definition, so all three are retried the same way —
+        # a page of stock counts is worth a minute of patience.
+        response = None
         for attempt in range(4):
-            response = await client.post(
-                f"{GEMINI_URL}/{settings.GEMINI_MODEL}:generateContent",
-                headers={"x-goog-api-key": settings.GEMINI_API_KEY},
-                json=body,
-            )
+            try:
+                response = await client.post(
+                    f"{GEMINI_URL}/{settings.GEMINI_MODEL}:generateContent",
+                    headers={"x-goog-api-key": settings.GEMINI_API_KEY},
+                    json=body,
+                )
+            except httpx.TimeoutException:
+                logger.info("gemini timed out (attempt %d)", attempt + 1)
+                continue
             if response.status_code not in (429, 503):
                 break
             wait = 15 * (attempt + 1)
@@ -252,6 +258,8 @@ async def _extract_gemini(image_bytes: bytes, *, vocabulary: list[str]) -> PageR
                 "gemini %s; waiting %ds (attempt %d)", response.status_code, wait, attempt + 1
             )
             await asyncio.sleep(wait)
+        if response is None:
+            raise VisionUnavailable("Gemini timed out on every attempt.")
     if response.status_code != 200:
         raise VisionUnavailable(
             f"Gemini refused the extraction: {response.status_code} {response.text[:200]}"
