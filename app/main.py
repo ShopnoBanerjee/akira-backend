@@ -27,6 +27,7 @@ from app.domains.sop.review_router import router as review_router
 from app.domains.sop.router import router as sop_router
 from app.domains.sop.runs_router import floor_router, runs_router
 from app.domains.users.router import router as users_router
+from app.integrations import storage
 from app.jobs import scheduler
 
 logging.basicConfig(level=logging.INFO)
@@ -42,6 +43,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await scheduler.start()
     yield
     await scheduler.shutdown()
+    await storage.aclose_client()
     await dispose_engine()
 
 

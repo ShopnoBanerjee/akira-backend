@@ -234,7 +234,16 @@ async def run_detail(run_id: uuid.UUID, db: DbDep, user: CurrentUserDep) -> dict
                            v.requires_photo, v.requires_value, v.value_type,
                            cast(v.value_min as float8) as value_min,
                            cast(v.value_max as float8) as value_max,
-                           v.value_unit, v.is_critical, v.allow_na
+                           v.value_unit, v.is_critical, v.allow_na,
+                           -- Whether this reviewer has already opened the
+                           -- photo. Was its own query; an `exists` on an
+                           -- already-indexed column costs nothing here and
+                           -- saves a round trip on a screen that has several.
+                           exists (
+                               select 1 from run_review_views rv
+                                where rv.run_item_id = ri.id
+                                  and rv.reviewer_id = :reviewer
+                           ) as viewed_by_me
                       from checklist_run_items ri
                       join checklist_template_item_versions v
                         on v.id = ri.template_item_version_id
@@ -242,38 +251,30 @@ async def run_detail(run_id: uuid.UUID, db: DbDep, user: CurrentUserDep) -> dict
                      order by ri.sort_order
                     """
                 ),
-                {"run_id": run_id},
+                {"run_id": run_id, "reviewer": user.profile_id},
             )
         ).mappings()
     ]
 
-    # Which photos this reviewer has already opened.
-    viewed = {
-        r[0]
-        for r in await db.execute(
-            text(
-                "select run_item_id from run_review_views"
-                " where run_id = :run_id and reviewer_id = :reviewer"
-            ),
-            {"run_id": run_id, "reviewer": user.profile_id},
-        )
-    }
-
     # Advisory verdicts, threshold already applied. Attached per item so the
     # manager sees the opinion beside the photo it is about, never as a
     # separate screen they would have to go and look for.
-    verdicts = await ai_review.latest_for_run(db, run_id)
+    #
+    # The outlet is handed over rather than looked up again — this handler read
+    # it out of the run three statements ago.
+    verdicts = await ai_review.latest_for_run(db, run_id, outlet_id=run["outlet_id"])
+
+    # One signing request for every photo on the screen. Signing them inside
+    # the loop below meant a manager opening a twelve-item run waited on twelve
+    # serial HTTPS round trips to Storage before seeing anything.
+    signed = await storage.create_signed_view_urls(
+        [i["photo_path"] for i in items if i["photo_path"]], expires_in=300
+    )
 
     for item in items:
-        item["viewed_by_me"] = item["id"] in viewed
         item["integrity_detail"] = _as_dict(item["integrity_detail"])
         item["ai_review"] = verdicts.get(item["id"])
-        if item["photo_path"]:
-            item["photo_view_url"] = await storage.create_signed_view_url(
-                item["photo_path"], expires_in=300
-            )
-        else:
-            item["photo_view_url"] = None
+        item["photo_view_url"] = signed.get(item["photo_path"]) if item["photo_path"] else None
 
     return {
         **dict(run),

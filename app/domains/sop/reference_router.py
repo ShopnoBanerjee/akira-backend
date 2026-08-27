@@ -146,14 +146,16 @@ async def list_reference_photos(
         .all()
     )
 
+    # Signed in one request rather than one per row: this screen lists every
+    # photo-requiring item in the outlet, so the loop scaled with the SOP.
+    signed = await storage.create_signed_view_urls(
+        [r["photo_path"] for r in rows if r["photo_path"]], expires_in=300
+    )
+
     out = []
     for row in rows:
         data = dict(row)
-        data["photo_view_url"] = (
-            await storage.create_signed_view_url(row["photo_path"], expires_in=300)
-            if row["photo_path"]
-            else None
-        )
+        data["photo_view_url"] = signed.get(row["photo_path"]) if row["photo_path"] else None
         out.append(ReferencePhoto(**data))
     return out
 
