@@ -4,6 +4,7 @@ This module is where authorisation actually lives. RLS is defence in depth; the
 guards here are the control. Every protected route composes one of them.
 """
 
+import json
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -16,7 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
-from app.core.db import get_db
+from app.core.db import get_db, get_session_factory
 from app.core.enums import GLOBAL_ROLES, UserRole
 from app.core.errors import AuthError, ForbiddenError, PendingActivationError
 from app.core.security import TokenClaims, TokenVerifier
@@ -93,36 +94,56 @@ async def get_claims(
     return get_verifier().verify(credentials.credentials)
 
 
-_PROFILE_SQL = text(
+#: Device, profile and memberships in one statement.
+#:
+#: These were three sequential queries, and every authenticated request paid
+#: all three — roughly 500ms of pure network before a handler had done any of
+#: its own work. They are independent lookups keyed on the same subject, so
+#: there was never a reason to ask three times.
+#:
+#: The memberships come back as a json array rather than as extra rows, so the
+#: whole thing stays one row and needs no grouping on the client side.
+_IDENTITY_SQL = text(
     """
-    select p.id, p.full_name, p.global_role, p.is_active, p.deleted_at
-      from profiles p
-     where p.id = :subject
-    """
-)
-
-_MEMBERSHIPS_SQL = text(
-    """
-    select m.outlet_id, o.code, o.name, m.role_at_outlet, m.is_primary
-      from outlet_members m
-      join outlets o on o.id = m.outlet_id
-     where m.profile_id = :subject
-       and m.deleted_at is null
-       and o.deleted_at is null
-       and o.is_active
-     order by m.is_primary desc, o.code
-    """
-)
-
-_DEVICE_SQL = text(
-    """
-    select d.id, d.outlet_id, d.label
-      from outlet_devices d
-      join outlets o on o.id = d.outlet_id
-     where d.auth_user_id = :subject
-       and d.is_active
-       and d.deleted_at is null
-       and o.deleted_at is null
+    select
+        d.id                as device_id,
+        d.outlet_id         as device_outlet_id,
+        d.label             as device_label,
+        p.id                as profile_id,
+        p.full_name,
+        p.global_role,
+        p.is_active,
+        p.deleted_at,
+        coalesce(m.memberships, '[]'::json) as memberships
+    from (select cast(:subject as uuid) as subject) s
+    left join outlet_devices d
+           on d.auth_user_id = s.subject
+          and d.is_active
+          and d.deleted_at is null
+          and exists (
+              select 1 from outlets o
+               where o.id = d.outlet_id and o.deleted_at is null
+          )
+    left join profiles p
+           on p.id = s.subject
+    left join lateral (
+        select json_agg(
+                   json_build_object(
+                       'outlet_id', m.outlet_id,
+                       'code', o.code,
+                       'name', o.name,
+                       'role_at_outlet', m.role_at_outlet,
+                       'is_primary', m.is_primary
+                   )
+                   order by m.is_primary desc, o.code
+               ) as memberships
+          from outlet_members m
+          join outlets o on o.id = m.outlet_id
+         where m.profile_id = s.subject
+           and m.deleted_at is null
+           and o.deleted_at is null
+           and o.is_active
+    ) m on true
     """
 )
 
@@ -132,27 +153,23 @@ async def current_user(
     claims: Annotated[TokenClaims, Depends(get_claims)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CurrentUser:
-    """Load the caller's profile and outlet memberships, once per request."""
+    """Load the caller's identity, once per request, in one round trip."""
     cached = getattr(request.state, "current_user", None)
     if isinstance(cached, CurrentUser):
         return cached
 
     subject = claims.subject
+    row = (await db.execute(_IDENTITY_SQL, {"subject": subject})).mappings().first()
 
-    device_row = (await db.execute(_DEVICE_SQL, {"subject": subject})).mappings().first()
-    device = (
-        DeviceContext(
-            device_id=device_row["id"],
-            outlet_id=device_row["outlet_id"],
-            label=device_row["label"],
+    device = None
+    if row is not None and row["device_id"] is not None:
+        device = DeviceContext(
+            device_id=row["device_id"],
+            outlet_id=row["device_outlet_id"],
+            label=row["device_label"],
         )
-        if device_row
-        else None
-    )
 
-    row = (await db.execute(_PROFILE_SQL, {"subject": subject})).mappings().first()
-
-    if row is None:
+    if row is None or row["profile_id"] is None:
         if device is not None:
             # A tablet has no profile of its own. It is a valid caller — the
             # floor endpoints accept it and then demand a staff PIN before any
@@ -170,18 +187,20 @@ async def current_user(
             request.state.current_user = user
             return user
         # Authenticated with no profile: a self-signup. Give them a dormant
-        # profile so an admin can find and activate them, but no access.
-        await db.execute(
-            text(
-                """
-                insert into profiles (id, full_name, global_role, is_active)
-                values (:subject, :name, 'staff', false)
-                on conflict (id) do nothing
-                """
-            ),
-            {"subject": subject, "name": claims.email or "New user"},
-        )
-        await db.commit()
+        # profile so an admin can find and activate them, but no access. This
+        # writes, so it needs a session that can commit.
+        async with get_session_factory()() as writer:
+            await writer.execute(
+                text(
+                    """
+                    insert into profiles (id, full_name, global_role, is_active)
+                    values (:subject, :name, 'staff', false)
+                    on conflict (id) do nothing
+                    """
+                ),
+                {"subject": subject, "name": claims.email or "New user"},
+            )
+            await writer.commit()
         raise PendingActivationError(
             "Your account exists but has not been activated yet. "
             "An administrator needs to assign your role and outlet."
@@ -194,19 +213,21 @@ async def current_user(
             "Your account is not active. An administrator needs to activate it."
         )
 
+    raw = row["memberships"]
+    entries = json.loads(raw) if isinstance(raw, str) else (raw or [])
     memberships = [
         OutletMembership(
-            outlet_id=m["outlet_id"],
+            outlet_id=uuid.UUID(str(m["outlet_id"])),
             outlet_code=m["code"],
             outlet_name=m["name"],
             role_at_outlet=UserRole(m["role_at_outlet"]),
             is_primary=m["is_primary"],
         )
-        for m in (await db.execute(_MEMBERSHIPS_SQL, {"subject": subject})).mappings()
+        for m in entries
     ]
 
     user = CurrentUser(
-        profile_id=row["id"],
+        profile_id=row["profile_id"],
         full_name=row["full_name"],
         email=claims.email,
         global_role=UserRole(row["global_role"]),
