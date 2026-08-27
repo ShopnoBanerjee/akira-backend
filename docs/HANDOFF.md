@@ -25,7 +25,9 @@ places — every deviation is recorded in `docs/DECISIONS.md` as D1–D14 with i
 reasoning. **Read DECISIONS.md before proposing any change**; several
 "obvious improvements" are things that were deliberately decided against.
 
-The plan is in `docs/EPIC_PLAN.md`.
+The plan is in `docs/EPIC_PLAN.md`. What is knowingly incomplete, and what
+would unblock each of those things, is in `docs/OPEN_ITEMS.md` — read it before
+concluding something is broken.
 
 ---
 
@@ -494,6 +496,9 @@ row rather than overwrite the Groq one, because the table is keyed on the model.
 
 **Rotate the Groq key in `.env`.** It reached this project through a chat
 transcript.
+
+This gap, the digest's missing mail server and the uncaptured reference
+standards are all tracked with their unblockers in `docs/OPEN_ITEMS.md`.
 
 **Before touching any model-calling code, load the `claude-api` skill.** The
 current API shape — `client.messages.parse`, `output_config.effort`, adaptive
