@@ -31,6 +31,8 @@ from app.core.deps import CurrentUser, CurrentUserDep, DbDep, require_management
 from app.core.errors import ForbiddenError, NotFoundError
 from app.core.scoring import ScoreWeights, outlet_score
 from app.core.settings_value import resolve_many, resolve_many_outlets
+from app.domains.sales import pillar_service
+from app.domains.sales.pillar import sales_pillar
 from app.domains.sop import metrics
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -204,6 +206,16 @@ async def outlet_health(
     score = outlet_score(counts, weights)
     trend = await metrics.daily_scores(db, outlet_id=outlet_id, start=start, end=end)
 
+    # The second live pillar (P12). Same effective-dating rule as the SOP
+    # weights: targets in force at the period's end.
+    _, closed_at = business_date_bounds(end)
+    sales_in = await pillar_service.sales_inputs_many(
+        db, outlet_ids=[outlet_id], start=start, end=end
+    )
+    sales_t = await pillar_service.sales_targets_many(db, outlet_ids=[outlet_id], at=closed_at)
+    sales = sales_pillar(sales_in[outlet_id], sales_t[outlet_id])
+    sales_worst = sales.worst_component
+
     worst = score.worst_component
     return {
         "outlet_id": str(outlet_id),
@@ -213,11 +225,23 @@ async def outlet_health(
         "pillars": [
             {
                 **pillar,
-                "score": score.score if pillar["key"] == "sop" else None,
-                "band": score.band if pillar["key"] == "sop" else "none",
-                # The card greys these rather than hiding them, so the shape of
-                # the finished thing is visible from the start.
-                "status": "live" if pillar["key"] == "sop" else "stage_2",
+                "score": (
+                    score.score
+                    if pillar["key"] == "sop"
+                    else sales.score
+                    if pillar["key"] == "sales"
+                    else None
+                ),
+                "band": (
+                    score.band
+                    if pillar["key"] == "sop"
+                    else sales.band
+                    if pillar["key"] == "sales"
+                    else "none"
+                ),
+                # Inventory and Guest stay greyed rather than hidden, so the
+                # shape of the finished thing is visible from the start.
+                "status": ("live" if pillar["key"] in ("sop", "sales") else "stage_2"),
             }
             for pillar in PILLARS
         ],
@@ -254,6 +278,29 @@ async def outlet_health(
                 "open_critical": counts.open_critical,
                 "stale_critical": counts.stale_critical,
             },
+        },
+        "sales": {
+            "score": sales.score,
+            "band": sales.band,
+            "components": [
+                {
+                    "key": c.key,
+                    "label": c.label,
+                    "display": c.display,
+                    "target": c.target_display,
+                    "score": c.score,
+                    "weight": c.weight,
+                    "contribution": c.contribution,
+                    "band": c.band,
+                }
+                for c in sales.components
+            ],
+            "dragged_down_by": (
+                {"key": sales_worst.key, "label": sales_worst.label, "display": sales_worst.display}
+                if sales_worst is not None
+                else None
+            ),
+            "detail": sales.detail,
         },
         "trend": trend,
     }

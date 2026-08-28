@@ -157,6 +157,60 @@ class TestResolvingSettingsForManyOutlets:
             await resolve_many_outlets(session, ["scoring.made.up"], outlet_ids=outlets)
 
 
+class TestSalesPillarInputs:
+    async def test_an_outlet_with_no_sales_still_comes_back_as_zeroes(
+        self, session: AsyncSession
+    ) -> None:
+        """Same guarantee as the SOP counts: the unnest keeps every requested
+        outlet on the result. Zero trading days is what the pillar reads as
+        "not measured" — an outlet must never vanish from the comparison."""
+        from app.domains.sales import pillar_service
+
+        outlets = await _outlets(session)
+        inputs = await pillar_service.sales_inputs_many(
+            session, outlet_ids=outlets, start=date(2001, 1, 1), end=date(2001, 1, 7)
+        )
+        assert set(inputs) == set(outlets)
+        for outlet in outlets:
+            assert inputs[outlet].trading_days == 0
+            assert inputs[outlet].bills == 0
+
+    async def test_the_aggregate_is_plain_ints_not_decimals(self, session: AsyncSession) -> None:
+        """asyncpg returns sum() as Decimal; the pure pillar module does float
+        arithmetic. The 500 this pins down was found live, not imagined."""
+        from app.domains.sales import pillar_service
+
+        outlets = await _outlets(session)
+        await session.execute(
+            text(
+                """
+                insert into sales_orders
+                    (outlet_id, external_bill_no, business_date, ordered_at,
+                     gross_paise, net_paise, customer_phone_hash)
+                values (:o, 'pillar-1', '2026-03-02', '2026-03-02 20:00+05:30',
+                        50000, 50000, 'hash')
+                """
+            ),
+            {"o": outlets[0]},
+        )
+        await session.commit()
+        try:
+            inputs = await pillar_service.sales_inputs_many(
+                session, outlet_ids=[outlets[0]], start=date(2026, 3, 1), end=date(2026, 3, 7)
+            )
+            got = inputs[outlets[0]]
+            assert type(got.net_paise) is int
+            assert got.trading_days == 1 and got.bills == 1
+            # 2026-03-02 is a Monday: the whole net is Mon-Wed share.
+            assert got.monwed_net_paise == 50000
+            assert got.bills_with_phone == 1
+        finally:
+            await session.execute(
+                text("delete from sales_orders where external_bill_no = 'pillar-1'")
+            )
+            await session.commit()
+
+
 class TestRecordingThatSomebodyWasHere:
     async def test_a_stale_timestamp_is_refreshed(self, session: AsyncSession) -> None:
         profile = await _profile(session)

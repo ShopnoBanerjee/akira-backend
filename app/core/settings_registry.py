@@ -20,7 +20,7 @@ from typing import Any, Literal
 SettingType = Literal["number", "integer", "boolean", "string", "time"]
 
 #: Groups drive the admin UI's sectioning and each group's permission note.
-SettingGroup = Literal["scoring", "integrity", "ai_review", "jobs"]
+SettingGroup = Literal["scoring", "sales", "integrity", "ai_review", "jobs"]
 
 
 @dataclass(frozen=True)
@@ -232,6 +232,150 @@ REGISTRY: dict[str, SettingDef] = {
             "A deterministic check, not an AI judgement.",
             minimum=0,
             maximum=255,
+        ),
+        # --- Sales pillar targets (spec section 5 / P12) -------------------
+        # Baselines from AKIRA's actual 17 Jul - 25 Aug trading data, seeded
+        # as the spec's Stage-2 target bands and reviewed monthly. All
+        # effective-dated: re-opening last month scores against the targets
+        # that were live last month (D9), same as the SOP weights.
+        SettingDef(
+            "sales.target.net_per_day_paise",
+            "sales",
+            "number",
+            18_000_00,
+            "Daily net sales target",
+            "Green at or above this net per trading day, in paise. "
+            "Spec baseline: current Rs 12,791/day, target Rs 18,000.",
+            minimum=0,
+            outlet_overridable=True,
+        ),
+        SettingDef(
+            "sales.amber.net_per_day_paise",
+            "sales",
+            "number",
+            13_000_00,
+            "Daily net sales amber floor",
+            "Below this the component band is red. Rs 13,000 in paise.",
+            minimum=0,
+            outlet_overridable=True,
+        ),
+        SettingDef(
+            "sales.target.orders_per_day",
+            "sales",
+            "number",
+            20,
+            "Orders per trading day target",
+            "Green at or above. Spec baseline: ~15/day currently.",
+            minimum=0,
+            outlet_overridable=True,
+        ),
+        SettingDef(
+            "sales.target.aov_paise",
+            "sales",
+            "number",
+            1_150_00,
+            "Average order value target",
+            "Green at or above, in paise. AOV is stable at Rs 1,075 - growth "
+            "comes from bill count, which is why its weight is low.",
+            minimum=0,
+            outlet_overridable=True,
+        ),
+        SettingDef(
+            "sales.target.monwed_share",
+            "sales",
+            "number",
+            0.45,
+            "Mon-Wed share of sales target",
+            "The known weak flank: green when Mon-Wed carries at least this "
+            "share of the week's net. Currently ~40%.",
+            minimum=0,
+            maximum=1,
+            outlet_overridable=True,
+        ),
+        SettingDef(
+            "sales.target.phone_capture",
+            "sales",
+            "number",
+            0.80,
+            "Phone capture rate target",
+            "Share of bills carrying a customer phone. The stated growth target; currently 31%.",
+            minimum=0,
+            maximum=1,
+            outlet_overridable=True,
+        ),
+        SettingDef(
+            "sales.max.discount_share",
+            "sales",
+            "number",
+            0.03,
+            "Discount ceiling",
+            "Discounts as a share of gross should stay under this. Currently 0.8%.",
+            minimum=0,
+            maximum=1,
+            outlet_overridable=True,
+        ),
+        # Component weights inside the pillar. Sum to 1. AOV deliberately low
+        # (spec: growth is bill count, not ticket size); discount is a small
+        # hygiene weight.
+        SettingDef(
+            "sales.weight.net",
+            "sales",
+            "number",
+            0.35,
+            "Weight: net sales/day",
+            "Share of the sales pillar carried by daily net vs target.",
+            minimum=0,
+            maximum=1,
+        ),
+        SettingDef(
+            "sales.weight.orders",
+            "sales",
+            "number",
+            0.25,
+            "Weight: orders/day",
+            "Share carried by order count vs target.",
+            minimum=0,
+            maximum=1,
+        ),
+        SettingDef(
+            "sales.weight.monwed",
+            "sales",
+            "number",
+            0.15,
+            "Weight: Mon-Wed share",
+            "Share carried by the weekday-sales flank.",
+            minimum=0,
+            maximum=1,
+        ),
+        SettingDef(
+            "sales.weight.phone",
+            "sales",
+            "number",
+            0.15,
+            "Weight: phone capture",
+            "Share carried by the capture rate.",
+            minimum=0,
+            maximum=1,
+        ),
+        SettingDef(
+            "sales.weight.aov",
+            "sales",
+            "number",
+            0.05,
+            "Weight: AOV",
+            "Deliberately low - see the AOV target's description.",
+            minimum=0,
+            maximum=1,
+        ),
+        SettingDef(
+            "sales.weight.discount",
+            "sales",
+            "number",
+            0.05,
+            "Weight: discount control",
+            "Small hygiene weight for staying under the discount ceiling.",
+            minimum=0,
+            maximum=1,
         ),
         # --- Jobs and notifications (spec section 4.1 / P7) ----------------
         SettingDef(
