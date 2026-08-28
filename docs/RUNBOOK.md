@@ -42,6 +42,7 @@ row; the UI for it is `/app/settings/jobs`.
 | `materialise_runs` | 05:00 daily (the business-date rollover) | Creates the day's pending runs from assignments | Missed fire replays within the grace window on restart |
 | `mark_missed` | every 15 min | Overdue pending runs → `missed` + a medium exception | Idempotent; next tick catches up |
 | `daily_digest` | 09:00 daily | Per-outlet email digest | 30-min misfire grace — a digest four hours late is worse than none |
+| `stock_anomalies` | 05:45 daily | Consumption windows from confirmed counts; section-6 anomaly checks onto the exception board | Idempotent; derived data, so running late loses nothing |
 
 **First diagnostic for anything time-related:** `GET /jobs/runs?limit=50` (or
 the settings/jobs screen). Every background task brackets itself there —

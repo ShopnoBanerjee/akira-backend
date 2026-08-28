@@ -27,6 +27,7 @@ def a_schedule(**overrides: object) -> sched.Schedule:
         "materialise_at": time(5, 0),
         "digest_at": time(9, 0),
         "missed_every_minutes": 15,
+        "anomalies_at": time(5, 45),
     }
     return sched.Schedule(**{**base, **overrides})  # type: ignore[arg-type]
 
@@ -59,7 +60,7 @@ class TestReconcileOnlyActsOnChange:
         fake = _FakeScheduler()
         monkeypatch.setattr(sched, "_scheduler", fake)
         sched._apply(fake, a_schedule())  # type: ignore[arg-type]
-        assert len(fake.added) == 3
+        assert len(fake.added) == 4
         fake.added.clear()
 
         async def unchanged() -> sched.Schedule:
@@ -85,7 +86,12 @@ class TestReconcileOnlyActsOnChange:
         await sched.reconcile()
 
         assert sorted(fake.added) == sorted(
-            [sched.tasks.MATERIALISE, sched.tasks.MARK_MISSED, sched.tasks.DAILY_DIGEST]
+            [
+                sched.tasks.MATERIALISE,
+                sched.tasks.MARK_MISSED,
+                sched.tasks.DAILY_DIGEST,
+                sched.tasks.STOCK_ANOMALIES,
+            ]
         )
 
     async def test_a_changed_interval_is_installed(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -159,6 +165,7 @@ class TestScheduleEquality:
         assert a_schedule() != a_schedule(materialise_at=time(6, 0))
         assert a_schedule() != a_schedule(digest_at=time(10, 0))
         assert a_schedule() != a_schedule(missed_every_minutes=30)
+        assert a_schedule() != a_schedule(anomalies_at=time(6, 15))
 
 
 class TestShutdown:

@@ -52,6 +52,7 @@ class Schedule:
     materialise_at: time
     digest_at: time
     missed_every_minutes: int
+    anomalies_at: time
 
 
 async def read_schedule() -> Schedule:
@@ -60,6 +61,7 @@ async def read_schedule() -> Schedule:
             materialise_at=await resolve_time(db, "jobs.materialise_time"),
             digest_at=await resolve_time(db, "jobs.digest_time"),
             missed_every_minutes=await resolve_int(db, "jobs.missed_check_minutes"),
+            anomalies_at=await resolve_time(db, "jobs.anomalies_time"),
         )
 
 
@@ -109,6 +111,21 @@ def _apply(scheduler: AsyncIOScheduler, schedule: Schedule) -> None:
         # Half an hour. A digest four hours late is worse than no digest —
         # people have already started their day on the old numbers.
         misfire_grace_time=1800,
+        coalesce=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        tasks.stock_anomalies,
+        CronTrigger(
+            hour=schedule.anomalies_at.hour,
+            minute=schedule.anomalies_at.minute,
+            timezone=OUTLET_TZ,
+        ),
+        id=tasks.STOCK_ANOMALIES,
+        name="Consumption windows and stock anomalies",
+        replace_existing=True,
+        # Derived data: running late loses nothing, so the grace is generous.
+        misfire_grace_time=3600,
         coalesce=True,
         max_instances=1,
     )

@@ -749,6 +749,39 @@ like everything else in this file.
 
 ---
 
+## D20 — Consumption is derived, anomalies land on the board that exists (P13)
+
+**Apparent consumption, and the adjective is doing honest work.** A window
+spans two consecutive confirmed counts: from_qty + requisitioned − to_qty.
+There is no goods-received flow yet, so finalised requisition quantities
+stand in for deliveries — the assumption is recorded on every row's detail,
+and a window with no requisition data keeps apparent_consumption NULL rather
+than defaulting receipts to zero. When a goods-received flow lands, the
+column tightens and the name stops hedging. Everything in stock_consumption
+is derived and freely recomputable; deleting it loses nothing but time.
+
+**Three checks, the simplest versions that cannot lie** (spec section 6):
+an unchanged non-zero count across N consecutive counts (a streak, not a
+statistic — repeated zero is a purchasing problem and exempt); a share of
+requisition lines already carrying the padding flag (no re-judgement, just
+"does it keep happening"); and a z-score of the latest consumption-per-cover
+against the item's own trailing distribution, refusing to compute against
+fewer than five windows because a z-score against four points is a coin
+toss. All thresholds are registry keys, outlet-overridable.
+
+**Findings are exceptions, not a new inbox.** They land on sop_exceptions
+with severity low/medium, deduplicated against open ones — the manager
+already works that queue, and a second inbox is where flags go to die. The
+nightly job (05:45, after materialisation closes the trading day) is
+idempotent and owner-runnable.
+
+**The live first run reported 0 windows and raised nothing** — the correct
+answer for a database with no confirmed counts yet. The machinery arms
+itself the day the first count is confirmed; the tests prove the rest with
+planted anomalies against a real database.
+
+---
+
 ## Assumptions in force — challenge these if wrong
 
 - **A1 — `ops_manager` approves outlet-manager submissions.** Spec open question

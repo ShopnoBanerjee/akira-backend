@@ -244,6 +244,71 @@ REGISTRY: dict[str, SettingDef] = {
             "unavailable the digest sends without it.",
             outlet_overridable=True,
         ),
+        SettingDef(
+            "jobs.anomalies_time",
+            "jobs",
+            "time",
+            "05:45",
+            "Stock anomalies run time",
+            "When the nightly consumption-and-anomalies pass runs. After the "
+            "05:00 materialisation, when yesterday's trading day is closed.",
+        ),
+        SettingDef(
+            "anomaly.unchanged_streak",
+            "jobs",
+            "number",
+            3,
+            "Unchanged-count streak",
+            "The same non-zero on-hand figure on this many consecutive counts "
+            "flags the item as probably not being counted.",
+            minimum=2,
+            outlet_overridable=True,
+        ),
+        SettingDef(
+            "anomaly.padding_min_lines",
+            "jobs",
+            "number",
+            3,
+            "Padding check minimum lines",
+            "Fewer finalised requisition lines than this and the consistency "
+            "check stays silent — a share of two points is noise.",
+            minimum=1,
+            outlet_overridable=True,
+        ),
+        SettingDef(
+            "anomaly.padding_share",
+            "jobs",
+            "number",
+            0.5,
+            "Padding share threshold",
+            "Flag when at least this share of recent requisition lines "
+            "carried the padding flag (asked > 1.3x the par gap).",
+            minimum=0,
+            maximum=1,
+            outlet_overridable=True,
+        ),
+        SettingDef(
+            "anomaly.min_windows",
+            "jobs",
+            "number",
+            5,
+            "Consumption z-score minimum windows",
+            "Fewer consumption windows than this and the per-cover jump check "
+            "stays silent. A z-score against four points is a coin toss.",
+            minimum=3,
+            outlet_overridable=True,
+        ),
+        SettingDef(
+            "anomaly.z_threshold",
+            "jobs",
+            "number",
+            2.5,
+            "Consumption jump z threshold",
+            "Spec section 6: flag |z| above this for consumption per cover "
+            "against the item's own trailing distribution.",
+            minimum=1,
+            outlet_overridable=True,
+        ),
         # --- Sales pillar targets (spec section 5 / P12) -------------------
         # Baselines from AKIRA's actual 17 Jul - 25 Aug trading data, seeded
         # as the spec's Stage-2 target bands and reviewed monthly. All

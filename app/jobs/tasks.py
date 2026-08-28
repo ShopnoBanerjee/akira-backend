@@ -35,10 +35,11 @@ logger = logging.getLogger(__name__)
 MATERIALISE = "materialise_runs"
 MARK_MISSED = "mark_missed"
 DAILY_DIGEST = "daily_digest"
+STOCK_ANOMALIES = "stock_anomalies"
 
 #: Everything an admin may trigger by hand. The photo passes are not here:
 #: they are attached to a specific upload, not to a schedule.
-MANUAL_JOBS = (MATERIALISE, MARK_MISSED, DAILY_DIGEST)
+MANUAL_JOBS = (MATERIALISE, MARK_MISSED, DAILY_DIGEST, STOCK_ANOMALIES)
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +297,15 @@ async def _digest_for_outlet(
 # ---------------------------------------------------------------------------
 
 
+async def stock_anomalies(*, triggered_by: uuid.UUID | None = None) -> dict[str, Any]:
+    """Consumption windows from confirmed counts, then the section-6 anomaly
+    checks, findings landing on the exception board. Safe to run twice: the
+    windows upsert and an open finding is never raised again."""
+    from app.domains.inventory import anomalies_service
+
+    return await run_job(STOCK_ANOMALIES, anomalies_service.run, triggered_by=triggered_by)
+
+
 async def run_by_name(
     name: str, *, triggered_by: uuid.UUID | None = None, for_date: date | None = None
 ) -> dict[str, Any]:
@@ -306,4 +316,6 @@ async def run_by_name(
         return await mark_missed(triggered_by=triggered_by)
     if name == DAILY_DIGEST:
         return await daily_digest(for_date=for_date, triggered_by=triggered_by)
+    if name == STOCK_ANOMALIES:
+        return await stock_anomalies(triggered_by=triggered_by)
     raise ValueError(f"{name} is not a job that can be run by hand.")
