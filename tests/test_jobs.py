@@ -345,7 +345,7 @@ class TestNarratedDigest:
         from dataclasses import replace
 
         base = a_digest(missed=1)
-        _, html_plain, text_plain = digest_module.render(base)
+        _, html_plain, _text_plain = digest_module.render(base)
         assert "narrated" not in html_plain  # nothing invented
 
         told = replace(base, narrative="One missed checklist wants a look.")
