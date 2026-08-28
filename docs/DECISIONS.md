@@ -782,6 +782,46 @@ planted anomalies against a real database.
 
 ---
 
+## D21 — Item names per bill, quantities honestly null (P14)
+
+**Decision.** The Order Listing report is ingested by a second versioned
+adapter, `petpooja.listing.v1`, through the SAME upload endpoint — the file
+is told apart by its header row (`Invoice No.` = master, `Order No.` +
+`Items` = listing), because the uploader should not have to know Petpooja's
+report names. It writes item names into `sales_order_items` joined to the
+master bill on `Order No.` = `external_bill_no`, with quantity and unit
+price made nullable by migration 0017 and left NULL.
+
+**Why null, not zero.** The export carries names only — "Veg Ramen" once on
+a bill could be quantity three. `qty not null default 0` (the speculative
+0005 shape) would have recorded knowledge nobody has; NULL is the same
+honest spelling `apparent_consumption` uses in 0016. The visible unit
+everywhere is "on N bills", never units sold.
+
+**Bills come only from the master.** An order the master has not ingested
+gets a warning, not an invented `sales_orders` row — a names-only export
+would give it a net of nothing and a date of maybe. The listing decorates;
+it never creates. Items for an order are wholly owned by the latest listing
+that mentioned it (delete-and-insert), so a corrected export also removes.
+
+**This export's trap is split payments, not summary rows**: a bill paid
+part-UPI part-cash repeats its Order No. in rows carrying only Grand Total
+and Payment Type (no Created, no Items — the discriminator). Recognised and
+counted, not warned about and never a duplicate.
+
+**PII discipline is tighter than the master's.** The file carries customer
+names, phones and addresses in the clear; none of them leave the parse loop,
+not even hashed — the master already owns customer identity and the fewer
+places personal data passes through, the fewer places it can leak from.
+
+**Live verification, 29 Aug 2026**: all 89 orders of the real export matched
+ingested master bills; the listing's My Amount sum equals the master's GROSS
+for those bills to the paisa (the ₹12.90 gap to net is exactly the
+discounts); 23/25 item names matched the Item Wise report, the two misses
+being Petpooja's own short-name aliases (recorded in OPEN_ITEMS).
+
+---
+
 ## Assumptions in force — challenge these if wrong
 
 - **A1 — `ops_manager` approves outlet-manager submissions.** Spec open question

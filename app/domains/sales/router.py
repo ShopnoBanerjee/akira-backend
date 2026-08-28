@@ -69,6 +69,10 @@ class OrderRow(BaseModel):
     #: Whether a phone was captured — never the hash itself, which is still
     #: personal data even hashed.
     has_phone: bool
+    #: Item names from the Order Listing report, in bill order. Empty until a
+    #: listing covering this bill has been uploaded. Names only — the export
+    #: carries no quantities, and this API does not invent them.
+    items: list[str]
 
 
 class DailyTotal(BaseModel):
@@ -76,6 +80,15 @@ class DailyTotal(BaseModel):
     bills: int
     net_paise: int
     covers: int
+
+
+class ItemSummaryRow(BaseModel):
+    item_name: str
+    #: Bills carrying this item at least once — NOT units sold. The Order
+    #: Listing has no quantities, so appearances are the honest unit.
+    bills: int
+    first_date: date
+    last_date: date
 
 
 @router.post(
@@ -91,7 +104,12 @@ async def upload_export(
     outlet_id: Annotated[uuid.UUID, Form()],
     file: Annotated[UploadFile, File()],
 ) -> dict[str, Any]:
-    """Accepts an Orders Master Report .xlsx and parses it in the background.
+    """Accepts a Petpooja .xlsx export and parses it in the background.
+
+    Two reports are understood, told apart by their header row: the Orders
+    Master Report (bills) and the Order Listing report (item names per bill).
+    The uploader does not choose — the file says what it is, and anything
+    else is refused here in the request.
 
     The outlet is chosen here rather than read from the file: a Petpooja export
     names only the restaurant, so two outlets produce indistinguishable files.
@@ -208,3 +226,25 @@ async def daily(
         db, user, outlet_id=outlet_id, date_from=date_from, date_to=date_to
     )
     return [DailyTotal(**r) for r in rows]
+
+
+@router.get(
+    "/items",
+    response_model=list[ItemSummaryRow],
+    dependencies=[Depends(require_management)],
+    summary="How often each item appears on a bill",
+)
+async def items(
+    db: DbDep,
+    user: CurrentUserDep,
+    outlet_id: Annotated[uuid.UUID, Query()],
+    date_from: date | None = Query(default=None, alias="from"),
+    date_to: date | None = Query(default=None, alias="to"),
+) -> list[ItemSummaryRow]:
+    """Appearances, not units: the Order Listing carries names without
+    quantities, so a bill with two Shoyu Ramen counts once. Empty until a
+    listing has been uploaded for the outlet."""
+    rows = await service.item_summary(
+        db, user, outlet_id=outlet_id, date_from=date_from, date_to=date_to
+    )
+    return [ItemSummaryRow(**r) for r in rows]

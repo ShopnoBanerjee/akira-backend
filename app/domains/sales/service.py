@@ -30,6 +30,7 @@ path to it. Only the salted digest ever reaches a database column.
 import hashlib
 import uuid
 from datetime import date
+from io import BytesIO
 from typing import Any
 
 from sqlalchemy import text
@@ -40,7 +41,7 @@ from app.core.config import get_settings
 from app.core.deps import CurrentUser
 from app.core.enums import AuditAction, UploadStatus
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
-from app.domains.sales import petpooja
+from app.domains.sales import petpooja, petpooja_listing
 from app.integrations import storage
 
 XLSX_TYPES = {
@@ -51,6 +52,40 @@ XLSX_TYPES = {
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 SOURCE_ORDERS = "petpooja_orders"
+SOURCE_LISTING = "petpooja_listing"
+
+
+def detect_source(data: bytes) -> str:
+    """Which Petpooja report these bytes are, from the header row.
+
+    The uploader should not have to know Petpooja's report names — one upload
+    button, and the file says what it is. The master's header has "Invoice
+    No." and no "Items"; the listing has "Order No." plus "Items". Anything
+    else is refused HERE, in the request, so whoever attached the wrong file
+    hears about it now rather than finding a failed upload row tomorrow.
+    """
+    from openpyxl import load_workbook
+
+    try:
+        workbook = load_workbook(BytesIO(data), read_only=True, data_only=True)
+    except Exception as exc:
+        raise ValidationError(f"Not a readable .xlsx file: {exc}") from exc
+    try:
+        sheet = workbook[workbook.sheetnames[0]]
+        for index, row in enumerate(sheet.iter_rows(values_only=True)):
+            if index >= 30:  # headers sit in the first few rows of every export seen
+                break
+            cells = {str(cell or "").strip() for cell in row}
+            if petpooja.HEADER_MARKER in cells:
+                return SOURCE_ORDERS
+            if all(m in cells for m in petpooja_listing.LISTING_HEADER_MARKERS):
+                return SOURCE_LISTING
+    finally:
+        workbook.close()
+    raise ValidationError(
+        "This is not a report this system can read. Supported: the Orders "
+        "Master Report and the Order Listing report, both from Petpooja."
+    )
 
 
 def phone_hasher() -> "Any":
@@ -101,6 +136,7 @@ async def create_upload(
         )
 
     file_sha256 = hashlib.sha256(data).hexdigest()
+    source = detect_source(data)
 
     # Idempotency. Somebody will re-send the same export, because nothing about
     # a spreadsheet says whether it has been sent before.
@@ -155,7 +191,7 @@ async def create_upload(
             {
                 "outlet_id": outlet_id,
                 "uploaded_by": user.profile_id,
-                "source": SOURCE_ORDERS,
+                "source": source,
                 "filename": filename[:250],
                 "path": path,
                 "sha": file_sha256,
@@ -177,6 +213,7 @@ async def create_upload(
     return {
         "id": str(upload_id),
         "outlet_id": outlet_id,
+        "source": source,
         "status": UploadStatus.RECEIVED.value,
         "row_count": None,
         "already_ingested": False,
@@ -195,7 +232,7 @@ async def parse_upload(db: AsyncSession, upload_id: uuid.UUID) -> dict[str, Any]
         (
             await db.execute(
                 text(
-                    "select id, outlet_id, storage_path, original_filename, status"
+                    "select id, outlet_id, storage_path, original_filename, source, status"
                     " from data_uploads where id = :id"
                 ),
                 {"id": upload_id},
@@ -216,6 +253,8 @@ async def parse_upload(db: AsyncSession, upload_id: uuid.UUID) -> dict[str, Any]
         data = await storage.download_object(
             upload["storage_path"], bucket=storage.SALES_UPLOAD_BUCKET
         )
+        if upload["source"] == SOURCE_LISTING:
+            return await _parse_listing(db, upload, data)
         result = petpooja.parse_orders(data, hash_phone=phone_hasher())
     except Exception as exc:
         await db.rollback()
@@ -374,6 +413,162 @@ async def _write_orders(
     return {"inserted": inserted, "updated": updated}
 
 
+async def _parse_listing(db: AsyncSession, upload: Any, data: bytes) -> dict[str, Any]:
+    """The Order Listing path: item names onto bills the master already owns.
+
+    Bills come from the Orders Master; this file only decorates them. An
+    order the master has not seen gets a warning, not a row — inventing a
+    bill from a names-only export would give it a net of nothing and a date
+    of maybe, and both would look like data.
+    """
+    result = petpooja_listing.parse_listing(data)
+    written = await _write_items(db, upload["outlet_id"], upload["id"], result)
+
+    import json
+
+    warnings = list(result.warnings)
+    if written["unmatched"]:
+        warnings.append(
+            {
+                "kind": "unmatched_bills",
+                "count": len(written["unmatched"]),
+                "bill_nos": written["unmatched"][:50],
+                "effect": (
+                    "no items written for these — upload the Orders Master "
+                    "Report covering this period first, then re-parse"
+                ),
+            }
+        )
+
+    period_start, period_end = result.period
+    await db.execute(
+        text(
+            """
+            update data_uploads
+               set status = 'parsed',
+                   row_count = :rows,
+                   period_start = :start,
+                   period_end = :end,
+                   warnings = cast(:warnings as jsonb),
+                   adapter_version = :adapter,
+                   parsed_net_paise = :net,
+                   parsed_at = now(),
+                   error_detail = null
+             where id = :id
+            """
+        ),
+        {
+            "id": upload["id"],
+            "rows": len(result.orders),
+            "start": period_start,
+            "end": period_end,
+            "warnings": json.dumps(warnings, default=str),
+            "adapter": result.adapter_version,
+            # The sum of My Amount across parsed orders. Verified against the
+            # real exports: this is the master's GROSS for the same bills
+            # (net + discounts), kept so the uploads list shows the two
+            # reports agreeing — the live file agreed to the paisa.
+            "net": result.amount_paise,
+        },
+    )
+    await db.commit()
+
+    return {
+        "upload_id": str(upload["id"]),
+        "orders_parsed": len(result.orders),
+        "orders_matched": written["matched"],
+        "orders_unmatched": len(written["unmatched"]),
+        "items_written": written["items"],
+        "payment_split_rows": result.payment_split_rows,
+        "warnings": len(warnings),
+        "adapter": result.adapter_version,
+    }
+
+
+_INSERT_ITEMS = text(
+    """
+    insert into sales_order_items
+        (order_id, outlet_id, business_date, item_name, sl_no, upload_id)
+    select b.order_id, :outlet_id, b.business_date, b.item_name, b.sl_no, :upload_id
+      from unnest(
+              cast(:order_ids as uuid[]),
+              cast(:business_dates as date[]),
+              cast(:item_names as text[]),
+              cast(:sl_nos as integer[])
+           ) as b(order_id, business_date, item_name, sl_no)
+    """
+)
+
+
+async def _write_items(
+    db: AsyncSession,
+    outlet_id: uuid.UUID,
+    upload_id: uuid.UUID,
+    result: "petpooja_listing.ListingResult",
+) -> dict[str, Any]:
+    """Replace each matched order's item set, one statement per step.
+
+    Delete-and-insert rather than upsert: the listing is the whole truth
+    about an order's items, so a re-parse must also remove a name that a
+    corrected export no longer carries. Quantity and price stay null — the
+    export does not say, and null is the honest spelling of that.
+
+    The business_date on each item row comes from the MATCHED master bill,
+    never from this file's own timestamp — one source of truth for dating.
+    """
+    bill_nos = [o.external_bill_no for o in result.orders]
+    matched = (
+        (
+            await db.execute(
+                text(
+                    """
+                    select id, external_bill_no, business_date from sales_orders
+                     where outlet_id = :o and external_bill_no = any(:bills)
+                    """
+                ),
+                {"o": outlet_id, "bills": bill_nos},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    by_bill = {r["external_bill_no"]: r for r in matched}
+    unmatched = [b for b in bill_nos if b not in by_bill]
+
+    order_ids: list[uuid.UUID] = []
+    dates: list[date] = []
+    names: list[str] = []
+    sl_nos: list[int] = []
+    for order in result.orders:
+        hit = by_bill.get(order.external_bill_no)
+        if hit is None:
+            continue
+        for sl, name in enumerate(order.item_names, start=1):
+            order_ids.append(hit["id"])
+            dates.append(hit["business_date"])
+            names.append(name)
+            sl_nos.append(sl)
+
+    if by_bill:
+        await db.execute(
+            text("delete from sales_order_items where order_id = any(:ids)"),
+            {"ids": [r["id"] for r in matched]},
+        )
+    for offset in range(0, len(order_ids), WRITE_CHUNK):
+        await db.execute(
+            _INSERT_ITEMS,
+            {
+                "outlet_id": outlet_id,
+                "upload_id": upload_id,
+                "order_ids": order_ids[offset : offset + WRITE_CHUNK],
+                "business_dates": dates[offset : offset + WRITE_CHUNK],
+                "item_names": names[offset : offset + WRITE_CHUNK],
+                "sl_nos": sl_nos[offset : offset + WRITE_CHUNK],
+            },
+        )
+    return {"matched": len(by_bill), "unmatched": unmatched, "items": len(order_ids)}
+
+
 async def background_parse(upload_id: uuid.UUID, outlet_id: uuid.UUID) -> None:
     """What the upload endpoint hands to a BackgroundTask."""
 
@@ -482,9 +677,15 @@ async def list_orders(
                            s.external_bill_no, s.business_date, s.ordered_at,
                            s.channel, s.covers, s.gross_paise, s.discount_paise,
                            s.tax_paise, s.net_paise, s.payment_mode, s.table_no,
-                           s.customer_phone_hash is not null as has_phone
+                           s.customer_phone_hash is not null as has_phone,
+                           coalesce(it.items, cast('{{}}' as text[])) as items
                       from sales_orders s
                       join outlets o on o.id = s.outlet_id
+                      left join lateral (
+                           select array_agg(i.item_name order by i.sl_no) as items
+                             from sales_order_items i
+                            where i.order_id = s.id
+                      ) it on true
                      {where}
                      order by s.business_date desc, s.ordered_at desc
                      limit :limit
@@ -528,6 +729,51 @@ async def daily_totals(
                             or business_date <= cast(:date_to as date))
                      group by business_date
                      order by business_date desc
+                    """
+                ),
+                {"outlet_id": outlet_id, "date_from": date_from, "date_to": date_to},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return [dict(r) for r in rows]
+
+
+async def item_summary(
+    db: AsyncSession,
+    user: CurrentUser,
+    *,
+    outlet_id: uuid.UUID,
+    date_from: date | None,
+    date_to: date | None,
+) -> list[dict[str, Any]]:
+    """How often each item appears on a bill. Not how many were sold.
+
+    The Order Listing carries names without quantities, so the honest unit is
+    "bills carrying this item" — a bill with two Shoyu Ramen counts once. The
+    column is named `bills` for exactly that reason; the day a true line-item
+    export exists, a `qty_sold` column can appear beside it.
+    """
+    if not user.can_access_outlet(outlet_id):
+        raise ForbiddenError("You do not have access to that outlet.")
+    rows = (
+        (
+            await db.execute(
+                text(
+                    """
+                    select item_name,
+                           count(distinct order_id) as bills,
+                           min(business_date) as first_date,
+                           max(business_date) as last_date
+                      from sales_order_items
+                     where outlet_id = :outlet_id
+                       and (cast(:date_from as date) is null
+                            or business_date >= cast(:date_from as date))
+                       and (cast(:date_to as date) is null
+                            or business_date <= cast(:date_to as date))
+                     group by item_name
+                     order by bills desc, item_name
                     """
                 ),
                 {"outlet_id": outlet_id, "date_from": date_from, "date_to": date_to},

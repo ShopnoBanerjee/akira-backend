@@ -166,7 +166,14 @@ def parse_timestamp(value: object) -> datetime:
         stamped = value
     else:
         text = str(value).strip()
-        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%d-%m-%Y %H:%M:%S", "%d/%m/%Y %H:%M"):
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%d-%m-%Y %H:%M:%S",
+            "%d/%m/%Y %H:%M",
+            # The Order Listing report writes "26 Aug 2026 00:46:15".
+            "%d %b %Y %H:%M:%S",
+        ):
             try:
                 stamped = datetime.strptime(text, fmt)
                 break

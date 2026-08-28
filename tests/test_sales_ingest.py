@@ -346,3 +346,171 @@ class TestUploadValidation:
                 content_type="application/octet-stream",
                 data=b"x" * 10,
             )
+
+
+class TestWritingItems:
+    """The Order Listing write path: names onto bills the master owns."""
+
+    @staticmethod
+    def listing(*orders):  # type: ignore[no-untyped-def]
+        from app.domains.sales import petpooja_listing
+
+        return petpooja_listing.ListingResult(orders=list(orders))
+
+    @staticmethod
+    def lo(bill_no: str, names: list[str]):  # type: ignore[no-untyped-def]
+        from app.domains.sales import petpooja_listing
+
+        return petpooja_listing.ParsedListingOrder(
+            external_bill_no=bill_no,
+            item_names=names,
+            raw_items=", ".join(names),
+            created_at=None,
+            amount_paise=None,
+        )
+
+    async def test_items_land_on_matched_bills_with_honest_nulls(
+        self, session: AsyncSession
+    ) -> None:
+        """Quantity and price are NULL, not zero — the export does not say,
+        and a default of 0 would record knowledge nobody has. The date comes
+        from the master bill, never from the listing file."""
+        outlet = await _outlet(session)
+        upload = await _upload(session, outlet, "sha-m")
+        await service._write_orders(
+            session, outlet, upload, result(order("1", business="2026-08-22"))
+        )
+        await session.commit()
+
+        listing_upload = await _upload(session, outlet, "sha-l")
+        written = await service._write_items(
+            session, outlet, listing_upload, self.listing(self.lo("1", ["Veg Ramen", "Gyoza"]))
+        )
+        await session.commit()
+
+        assert written["matched"] == 1 and written["items"] == 2 and written["unmatched"] == []
+        rows = (
+            (
+                await session.execute(
+                    text(
+                        "select item_name, sl_no, qty, unit_price_paise, line_net_paise,"
+                        " business_date from sales_order_items order by sl_no"
+                    )
+                )
+            )
+            .mappings()
+            .all()
+        )
+        assert [r["item_name"] for r in rows] == ["Veg Ramen", "Gyoza"]
+        assert all(r["qty"] is None for r in rows)
+        assert all(r["unit_price_paise"] is None for r in rows)
+        assert all(r["line_net_paise"] is None for r in rows)
+        assert all(str(r["business_date"]) == "2026-08-22" for r in rows)
+
+    async def test_an_unseen_bill_gets_a_report_not_a_row(self, session: AsyncSession) -> None:
+        """Inventing a bill from a names-only export would give it a net of
+        nothing and a date of maybe."""
+        outlet = await _outlet(session)
+        listing_upload = await _upload(session, outlet, "sha-l")
+        written = await service._write_items(
+            session, outlet, listing_upload, self.listing(self.lo("404", ["Veg Ramen"]))
+        )
+        await session.commit()
+
+        assert written == {"matched": 0, "unmatched": ["404"], "items": 0}
+        count = (await session.execute(text("select count(*) from sales_order_items"))).scalar_one()
+        assert count == 0
+
+    async def test_a_reparse_replaces_the_set_rather_than_appending(
+        self, session: AsyncSession
+    ) -> None:
+        """The listing is the whole truth about an order's items: a corrected
+        export that no longer carries a name must also remove it."""
+        outlet = await _outlet(session)
+        upload = await _upload(session, outlet, "sha-m")
+        await service._write_orders(session, outlet, upload, result(order("1")))
+        await session.commit()
+
+        first = await _upload(session, outlet, "sha-l1")
+        await service._write_items(
+            session, outlet, first, self.listing(self.lo("1", ["Veg Ramen", "Wrong Item"]))
+        )
+        await session.commit()
+
+        second = await _upload(session, outlet, "sha-l2")
+        await service._write_items(
+            session, outlet, second, self.listing(self.lo("1", ["Veg Ramen"]))
+        )
+        await session.commit()
+
+        names = [
+            r[0]
+            for r in await session.execute(
+                text("select item_name from sales_order_items order by sl_no")
+            )
+        ]
+        assert names == ["Veg Ramen"]
+
+    async def test_the_orders_view_carries_the_items(self, session: AsyncSession) -> None:
+        from app.core.deps import CurrentUser
+        from app.core.enums import UserRole
+
+        outlet = await _outlet(session)
+        upload = await _upload(session, outlet, "sha-m")
+        await service._write_orders(session, outlet, upload, result(order("1"), order("2")))
+        await session.commit()
+        listing_upload = await _upload(session, outlet, "sha-l")
+        await service._write_items(
+            session, outlet, listing_upload, self.listing(self.lo("1", ["Veg Ramen", "Gyoza"]))
+        )
+        await session.commit()
+
+        owner = CurrentUser(
+            profile_id=uuid.uuid4(),
+            full_name="Owner",
+            email=None,
+            global_role=UserRole.OWNER,
+            is_active=True,
+        )
+        rows = await service.list_orders(
+            session, owner, outlet_id=outlet, date_from=None, date_to=None, limit=10
+        )
+        by_bill = {r["external_bill_no"]: r["items"] for r in rows}
+        assert by_bill["1"] == ["Veg Ramen", "Gyoza"]
+        # A bill no listing has covered yet shows an empty list, not a lie.
+        assert by_bill["2"] == []
+
+    async def test_the_item_summary_counts_bills_not_units(self, session: AsyncSession) -> None:
+        from app.core.deps import CurrentUser
+        from app.core.enums import UserRole
+
+        outlet = await _outlet(session)
+        upload = await _upload(session, outlet, "sha-m")
+        await service._write_orders(session, outlet, upload, result(order("1"), order("2")))
+        await session.commit()
+        listing_upload = await _upload(session, outlet, "sha-l")
+        await service._write_items(
+            session,
+            outlet,
+            listing_upload,
+            self.listing(
+                # Bill 1 carries Veg Ramen twice — the party ordered two. The
+                # summary still counts one BILL, because units are unknown.
+                self.lo("1", ["Veg Ramen", "Veg Ramen", "Gyoza"]),
+                self.lo("2", ["Veg Ramen"]),
+            ),
+        )
+        await session.commit()
+
+        owner = CurrentUser(
+            profile_id=uuid.uuid4(),
+            full_name="Owner",
+            email=None,
+            global_role=UserRole.OWNER,
+            is_active=True,
+        )
+        rows = await service.item_summary(
+            session, owner, outlet_id=outlet, date_from=None, date_to=None
+        )
+        by_name = {r["item_name"]: r["bills"] for r in rows}
+        assert by_name == {"Veg Ramen": 2, "Gyoza": 1}

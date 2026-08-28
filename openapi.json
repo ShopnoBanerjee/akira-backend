@@ -2360,7 +2360,7 @@
           "sales"
         ],
         "summary": "Upload a Petpooja export",
-        "description": "Accepts an Orders Master Report .xlsx and parses it in the background.\n\nThe outlet is chosen here rather than read from the file: a Petpooja export\nnames only the restaurant, so two outlets produce indistinguishable files.\n\nRe-sending a file already ingested returns the original upload untouched \u2014\nidempotency is on the bytes, not the filename, which carries an export\ntimestamp and changes every time.",
+        "description": "Accepts a Petpooja .xlsx export and parses it in the background.\n\nTwo reports are understood, told apart by their header row: the Orders\nMaster Report (bills) and the Order Listing report (item names per bill).\nThe uploader does not choose \u2014 the file says what it is, and anything\nelse is refused here in the request.\n\nThe outlet is chosen here rather than read from the file: a Petpooja export\nnames only the restaurant, so two outlets produce indistinguishable files.\n\nRe-sending a file already ingested returns the original upload untouched \u2014\nidempotency is on the bytes, not the filename, which carries an export\ntimestamp and changes every time.",
         "operationId": "upload_export_sales_uploads_post",
         "security": [
           {
@@ -2700,6 +2700,93 @@
                     "$ref": "#/components/schemas/DailyTotal"
                   },
                   "title": "Response Daily Sales Daily Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sales/items": {
+      "get": {
+        "tags": [
+          "sales"
+        ],
+        "summary": "How often each item appears on a bill",
+        "description": "Appearances, not units: the Order Listing carries names without\nquantities, so a bill with two Shoyu Ramen counts once. Empty until a\nlisting has been uploaded for the outlet.",
+        "operationId": "items_sales_items_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outlet_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Outlet Id"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ItemSummaryRow"
+                  },
+                  "title": "Response Items Sales Items Get"
                 }
               }
             }
@@ -6442,6 +6529,36 @@
         ],
         "title": "ItemResult"
       },
+      "ItemSummaryRow": {
+        "properties": {
+          "item_name": {
+            "type": "string",
+            "title": "Item Name"
+          },
+          "bills": {
+            "type": "integer",
+            "title": "Bills"
+          },
+          "first_date": {
+            "type": "string",
+            "format": "date",
+            "title": "First Date"
+          },
+          "last_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Last Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "item_name",
+          "bills",
+          "first_date",
+          "last_date"
+        ],
+        "title": "ItemSummaryRow"
+      },
       "JobRun": {
         "properties": {
           "id": {
@@ -6777,6 +6894,13 @@
           "has_phone": {
             "type": "boolean",
             "title": "Has Phone"
+          },
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Items"
           }
         },
         "type": "object",
@@ -6795,7 +6919,8 @@
           "net_paise",
           "payment_mode",
           "table_no",
-          "has_phone"
+          "has_phone",
+          "items"
         ],
         "title": "OrderRow"
       },
