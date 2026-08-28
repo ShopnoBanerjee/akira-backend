@@ -14,7 +14,8 @@ execution leaves a job_runs row whether it worked or not.
 
 import logging
 import uuid
-from datetime import date, datetime, timedelta
+from dataclasses import replace
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import text
@@ -25,6 +26,7 @@ from app.core.business_date import business_date as to_business_date
 from app.core.settings_value import resolve
 from app.domains.sop import runs_service
 from app.jobs import digest as digest_module
+from app.jobs import narrate as narrate_module
 from app.jobs.notify import Notification, get_notifier
 from app.jobs.runner import run_job
 
@@ -229,6 +231,45 @@ async def _digest_for_outlet(
 ) -> dict[str, Any]:
     async def body(db: AsyncSession) -> dict[str, Any]:
         data = await digest_module.build(db, outlet_id=outlet_id, business_date=business_day)
+
+        # The day's sales line, computed by code; the narrator may only repeat
+        # it. One aggregate call, same statement the dashboard pillar uses.
+        from app.domains.sales import pillar_service
+        from app.domains.sales.pillar import rupees
+
+        sales_in = await pillar_service.sales_inputs_many(
+            db, outlet_ids=[outlet_id], start=business_day, end=business_day
+        )
+        day = sales_in.get(outlet_id)
+        if day and day.bills:
+            targets = await pillar_service.sales_targets_many(
+                db, outlet_ids=[outlet_id], at=datetime.now(tz=UTC)
+            )
+            data = replace(
+                data,
+                net_display=rupees(day.net_paise),
+                net_target_display=rupees(targets[outlet_id].net_per_day_paise),
+            )
+
+        # Advisory narration. A morning email is never hostage to a model.
+        narrated = "disabled"
+        if bool(await resolve(db, "jobs.digest_narrative", outlet_id=outlet_id)):
+            facts = narrate_module.build_facts(
+                outlet_code=data.outlet_code,
+                business_date=data.business_date,
+                headline=data.headline,
+                completion_rate=data.completion_rate,
+                mean_score=data.mean_score,
+                missed=data.missed,
+                critical_fails=data.critical_fails,
+                open_exceptions=data.open_exceptions,
+                stale_exceptions=data.stale_exceptions,
+                net_display=data.net_display,
+                net_target_display=data.net_target_display,
+            )
+            data = replace(data, narrative=await narrate_module.narrate(facts))
+            narrated = "written" if data.narrative else "skipped"
+
         subject, html, plain = digest_module.render(data)
         to = await digest_module.recipients(db, outlet_id)
 
@@ -241,7 +282,7 @@ async def _digest_for_outlet(
             # Visible, not silent. The whole point of the jobs screen.
             delivery["configured_channel"] = channel
             delivery["downgraded_because"] = downgraded
-        return {**digest_module.to_detail(data), "delivery": delivery}
+        return {**digest_module.to_detail(data), "narrative": narrated, "delivery": delivery}
 
     return await run_job(
         DAILY_DIGEST,

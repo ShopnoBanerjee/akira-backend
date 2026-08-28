@@ -285,6 +285,75 @@ class TestMarkMissed:
         assert run_id not in await self._run_the_query(session)
 
 
+class TestNarratedDigest:
+    """The narration contract: the facts list is the model's entire world,
+    and the digest must read fine when the narrator says nothing."""
+
+    def test_the_facts_are_exactly_what_code_computed(self) -> None:
+        from app.jobs import narrate
+
+        facts = narrate.build_facts(
+            outlet_code="AKR-NT01",
+            business_date=date(2026, 8, 27),
+            headline="7/9 approved · 1 missed",
+            completion_rate=77.8,
+            mean_score=94.0,
+            missed=1,
+            critical_fails=2,
+            open_exceptions=3,
+            stale_exceptions=1,
+            net_display="₹13,990",
+            net_target_display="₹18,000",
+        )
+        joined = " | ".join(facts)
+        assert "₹13,990 against a target of ₹18,000" in joined
+        assert "Critical failures: 2" in joined
+        assert "more than 48 hours: 1" in joined
+
+    def test_a_clean_day_hands_over_no_zero_noise(self) -> None:
+        """Zeroes are omitted so the model cannot dramatise a non-event."""
+        from app.jobs import narrate
+
+        facts = narrate.build_facts(
+            outlet_code="AKR-NT01",
+            business_date=date(2026, 8, 27),
+            headline="9/9 approved",
+            completion_rate=100.0,
+            mean_score=98.0,
+            missed=0,
+            critical_fails=0,
+            open_exceptions=0,
+            stale_exceptions=0,
+            net_display=None,
+            net_target_display=None,
+        )
+        joined = " | ".join(facts)
+        assert "Missed" not in joined and "Critical" not in joined
+        assert "Net sales" not in joined
+
+    async def test_no_key_means_no_paragraph_never_an_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.core import config
+        from app.jobs import narrate
+
+        settings = config.get_settings()
+        monkeypatch.setattr(settings, "GEMINI_API_KEY", "", raising=False)
+        assert await narrate.narrate(["Outlet: X"]) is None
+
+    def test_the_digest_renders_with_and_without_the_paragraph(self) -> None:
+        from dataclasses import replace
+
+        base = a_digest(missed=1)
+        _, html_plain, text_plain = digest_module.render(base)
+        assert "narrated" not in html_plain  # nothing invented
+
+        told = replace(base, narrative="One missed checklist wants a look.")
+        _, html_n, text_n = digest_module.render(told)
+        assert "One missed checklist wants a look." in html_n
+        assert text_n.startswith("One missed checklist wants a look.")
+
+
 class TestSweepOverdue:
     """The one-statement flip-and-raise, against a real database.
 

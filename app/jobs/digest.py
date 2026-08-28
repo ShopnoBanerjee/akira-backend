@@ -67,6 +67,14 @@ class Digest:
     open_exceptions: int
     stale_exceptions: int
     spot_checks: list[SpotCheck] = field(default_factory=list)
+    #: Net sales for the trading day, already formatted (₹, Indian grouping);
+    #: None when no bills landed. Computed by code — the narrative may only
+    #: repeat it.
+    net_display: str | None = None
+    net_target_display: str | None = None
+    #: One model-written paragraph, or None when the narrator was skipped or
+    #: unavailable. Advisory: the digest reads fine without it.
+    narrative: str | None = None
 
     @property
     def completion_rate(self) -> float | None:
@@ -282,6 +290,12 @@ def render(digest: Digest) -> tuple[str, str, str]:
     """(subject, html, text). No I/O, so this is unit-testable as itself."""
     subject = f"AKIRA {digest.outlet_code} — {digest.business_date}: {digest.headline}"
 
+    narrative_html = (
+        f'<p style="font-size:15px;line-height:1.5;margin:0 0 14px">{escape(digest.narrative)}</p>'
+        if digest.narrative
+        else ""
+    )
+
     stats = [
         ("Runs approved", f"{digest.approved} of {digest.scheduled}"),
         ("Completion", _pct(digest.completion_rate)),
@@ -328,6 +342,7 @@ def render(digest: Digest) -> tuple[str, str, str]:
         spot_html = ""
 
     html = (
+        f"{narrative_html}"
         f"<div style=\"font-family:'Noto Sans',Arial,sans-serif;color:{_INK};"
         'max-width:560px">'
         f'<p style="margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;'
@@ -371,6 +386,9 @@ def render(digest: Digest) -> tuple[str, str, str]:
         "",
         "Integrity flags are advisory. They never block a submission.",
     ]
+    if digest.narrative:
+        lines.insert(0, digest.narrative)
+        lines.insert(1, "")
     return subject, html, "\n".join(lines)
 
 

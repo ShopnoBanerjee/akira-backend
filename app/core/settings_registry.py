@@ -233,6 +233,17 @@ REGISTRY: dict[str, SettingDef] = {
             minimum=0,
             maximum=255,
         ),
+        SettingDef(
+            "jobs.digest_narrative",
+            "jobs",
+            "boolean",
+            True,
+            "Narrated digest",
+            "One model-written opening paragraph on the daily digest, built "
+            "only from numbers the code computed. Advisory: when the model is "
+            "unavailable the digest sends without it.",
+            outlet_overridable=True,
+        ),
         # --- Sales pillar targets (spec section 5 / P12) -------------------
         # Baselines from AKIRA's actual 17 Jul - 25 Aug trading data, seeded
         # as the spec's Stage-2 target bands and reviewed monthly. All

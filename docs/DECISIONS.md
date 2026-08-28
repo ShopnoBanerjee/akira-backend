@@ -707,6 +707,48 @@ it: both need rotation from their consoles. Both live only in gitignored
 
 ---
 
+## D19 — The Sales pillar and the narrated digest (P12)
+
+The health card's second pillar, built the way the first earned trust.
+
+**Normalisation is the simplest honest thing**: min(100, 100 × value/target),
+capped so a blowout week cannot bank surplus against a bad one. A sigmoid
+would score "nicer" and nobody could check it on their fingers; every
+component carries its value, target, weight and contribution so a manager
+can. Targets are the spec's own Stage-2 bands, seeded into the settings
+registry effective-dated and outlet-overridable — re-opening last month
+scores against last month's targets (D9). Component weights are registry
+keys too: net/day 0.35, orders/day 0.25, Mon–Wed share 0.15, phone capture
+0.15, AOV 0.05 (the spec's own instruction — growth is bill count, not
+ticket size), discount control 0.05.
+
+**Verified against the real trades, not fixtures**: NT01's actual August
+reads ₹13,990/day (amber against the ₹18k target), 42% phone capture (up
+from the 31% baseline), pillar 71.1 dragged down by phone capture — matching
+a hand-run SQL check to the rupee, and matching the exact growth story the
+spec tells. The test suite pins the spec's published baseline as a
+regression case. One live-found bug pinned by a test: asyncpg returns sums
+as Decimal, coerced at the service boundary so the pure module never sees
+one.
+
+**Still no blended health number.** Two pillars is half the evidence; the
+figure would change the day the next pillar lands with nothing about the
+outlet having changed. D14's argument does not expire until the card is
+mostly real.
+
+**The narrated digest applies the extraction rule to prose**: code computes
+every number, the model narrates ONLY the facts list it is handed — the full
+table prints directly beneath the paragraph, so an invented figure is
+instantly visible as a lie. Zero-valued facts are omitted so the model
+cannot dramatise a non-event. Advisory to the bone: no key, a 429, an
+outage — the digest sends without the paragraph and the job detail records
+"skipped"; a morning email is never hostage to a model. Toggleable per
+outlet via jobs.digest_narrative. The preview model spends thinking tokens
+inside maxOutputTokens — 500 truncated mid-word, 2000 does not; found live,
+like everything else in this file.
+
+---
+
 ## Assumptions in force — challenge these if wrong
 
 - **A1 — `ops_manager` approves outlet-manager submissions.** Spec open question
