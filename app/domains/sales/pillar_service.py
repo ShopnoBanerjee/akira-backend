@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings_value import resolve_many_outlets
+from app.domains.sales.guest_pillar import GuestInputs, GuestTargets
 from app.domains.sales.pillar import SalesInputs, SalesTargets
 
 _TARGET_KEYS = [
@@ -133,3 +134,100 @@ async def sales_targets_many(
     month scores against last month's targets (D9), same as the SOP weights."""
     per_outlet = await resolve_many_outlets(db, _TARGET_KEYS, outlet_ids=outlet_ids, at=at)
     return {outlet: _targets(values) for outlet, values in per_outlet.items()}
+
+
+# ---------------------------------------------------------------------------
+# Guest & throughput (P15) — same D16 shape, same table, its own aggregates
+# ---------------------------------------------------------------------------
+
+_GUEST_TARGET_KEYS = [
+    "guest.target.repeat_rate",
+    "guest.weight.repeat",
+    "scoring.band.green",
+    "scoring.band.amber",
+]
+
+_GUEST_AGG_SQL = text(
+    """
+    with wanted as (
+        select unnest(cast(:ids as uuid[])) as outlet_id
+    ),
+    customers as (
+        select outlet_id, customer_phone_hash,
+               count(distinct business_date) as days_seen
+          from sales_orders
+         where outlet_id = any (cast(:ids as uuid[]))
+           and business_date between :start and :end
+           and customer_phone_hash is not null
+         group by outlet_id, customer_phone_hash
+    ),
+    agg as (
+        select outlet_id,
+               count(*)                                as bills,
+               coalesce(sum(net_paise), 0)             as net_paise,
+               -- Peak trading hours, on the clock at the outlet. 20:00-22:59
+               -- is the spec's 20:00-23:00 window.
+               coalesce(sum(net_paise) filter (
+                   where extract(hour from ordered_at at time zone 'Asia/Kolkata')
+                         between 20 and 22
+               ), 0)                                   as peak_net_paise
+          from sales_orders
+         where outlet_id = any (cast(:ids as uuid[]))
+           and business_date between :start and :end
+         group by outlet_id
+    ),
+    ident as (
+        select outlet_id,
+               count(*)                                  as identified,
+               count(*) filter (where days_seen >= 2)    as repeats
+          from customers
+         group by outlet_id
+    )
+    select w.outlet_id,
+           coalesce(a.bills, 0)          as bills,
+           coalesce(a.net_paise, 0)      as net_paise,
+           coalesce(a.peak_net_paise, 0) as peak_net_paise,
+           coalesce(i.identified, 0)     as identified,
+           coalesce(i.repeats, 0)        as repeats
+      from wanted w
+      left join agg a on a.outlet_id = w.outlet_id
+      left join ident i on i.outlet_id = w.outlet_id
+    """
+)
+
+
+async def guest_inputs_many(
+    db: AsyncSession, *, outlet_ids: list[uuid.UUID], start: date, end: date
+) -> dict[uuid.UUID, GuestInputs]:
+    if not outlet_ids:
+        return {}
+    rows = (
+        (await db.execute(_GUEST_AGG_SQL, {"ids": outlet_ids, "start": start, "end": end}))
+        .mappings()
+        .all()
+    )
+    return {
+        uuid.UUID(str(r["outlet_id"])): GuestInputs(
+            bills=int(r["bills"]),
+            identified_customers=int(r["identified"]),
+            repeat_customers=int(r["repeats"]),
+            peak_net_paise=int(r["peak_net_paise"]),
+            net_paise=int(r["net_paise"]),
+        )
+        for r in rows
+    }
+
+
+async def guest_targets_many(
+    db: AsyncSession, *, outlet_ids: list[uuid.UUID], at: datetime
+) -> dict[uuid.UUID, GuestTargets]:
+    per_outlet = await resolve_many_outlets(db, _GUEST_TARGET_KEYS, outlet_ids=outlet_ids, at=at)
+    return {
+        outlet: GuestTargets(
+            repeat_rate=float(values["guest.target.repeat_rate"]),
+            w_repeat=float(values["guest.weight.repeat"]),
+            green=float(values["scoring.band.green"]),
+            amber=float(values["scoring.band.amber"]),
+        )
+        for outlet, values in per_outlet.items()
+    }

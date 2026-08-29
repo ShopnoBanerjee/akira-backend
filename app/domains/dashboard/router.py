@@ -1,16 +1,14 @@
 """The Outlet Health card.
 
-Spec section 5 describes one number per outlet from four weighted pillars.
-**Stage 1 delivers exactly one of them**, so this endpoint returns the SOP
-compliance score as the headline and the other three as declared-but-pending.
+Spec section 5: one number per outlet from four weighted pillars. All four
+now produce (P15) — SOP and Sales in full, Inventory and Guest with their
+gaps declared as pending components — so the blended score D14 refused to
+fake is finally arithmetic: sum(pillar x weight) renormalised over the
+pillars actually measured this period. D14 retires; D22 records the blend.
 
-It does not compute a blended health score. Multiplying a live pillar by 0.30
-and calling the result "outlet health" would be a number that means nothing —
-it would read as a catastrophic 27/100 for a perfect outlet, or, if silently
-rescaled, would change the moment a second pillar arrived without anything
-about the outlet having changed. The layout is built for four pillars so it
-does not move later; the arithmetic waits until there is something to do it
-with. Recorded as D14.
+An unmeasured pillar (no confirmed counts yet, say) is left out of the
+denominator and named in `health.unmeasured` — never padded with a zero,
+because "not measured" and "failed" must not be the same number.
 
 Weights are resolved at the END of the period being scored, so re-opening last
 month uses the weights that were live last month (D9).
@@ -29,9 +27,14 @@ from app.core.business_date import business_date as to_business_date
 from app.core.business_date import business_date_bounds, outlet_now
 from app.core.deps import CurrentUser, CurrentUserDep, DbDep, require_management
 from app.core.errors import ForbiddenError, NotFoundError
+from app.core.pillar_math import Pillar
 from app.core.scoring import ScoreWeights, outlet_score
 from app.core.settings_value import resolve_many, resolve_many_outlets
+from app.domains.dashboard.health import PillarReading, blended_health
+from app.domains.inventory import pillar_service as inv_service
+from app.domains.inventory.pillar import inventory_pillar
 from app.domains.sales import pillar_service
+from app.domains.sales.guest_pillar import guest_pillar
 from app.domains.sales.pillar import sales_pillar
 from app.domains.sop import metrics
 
@@ -39,15 +42,46 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 DEFAULT_PERIOD_DAYS = 28
 
-#: Spec section 5. Weights are fixed here rather than in the settings registry
-#: because three of the four have nothing to weight yet; they become editable
-#: when Stage 2 gives them components.
+#: Spec section 5's weights, fixed here rather than in the settings registry —
+#: they become editable the day somebody actually needs to tune them.
 PILLARS = [
     {"key": "sales", "label": "Sales & growth", "weight": 30},
     {"key": "sop", "label": "SOP compliance", "weight": 30},
     {"key": "inventory", "label": "Inventory discipline", "weight": 25},
     {"key": "guest", "label": "Guest & throughput", "weight": 15},
 ]
+
+
+def _pillar_block(pillar: Pillar) -> dict[str, Any]:
+    """One serialisation for the pillar_math-shaped pillars, so inventory and
+    guest cannot drift apart on the wire."""
+    worst = pillar.worst_component
+    return {
+        "score": pillar.score,
+        "band": pillar.band,
+        "components": [
+            {
+                "key": c.key,
+                "label": c.label,
+                "display": c.display,
+                "target": c.target_display,
+                "score": c.score,
+                "weight": c.weight,
+                "contribution": c.contribution,
+                "band": c.band,
+                "status": c.status,
+                "note": c.note,
+            }
+            for c in pillar.components
+        ],
+        "dragged_down_by": (
+            {"key": worst.key, "label": worst.label, "display": worst.display}
+            if worst is not None
+            else None
+        ),
+        "detail": pillar.detail,
+    }
+
 
 _WEIGHT_KEYS = [
     "scoring.weight.run_score",
@@ -98,9 +132,13 @@ class OutletHealthRow(BaseModel):
     outlet_id: uuid.UUID
     outlet_code: str
     outlet_name: str
+    #: The BLENDED health since P15 — previously this was the SOP score alone.
     score: float | None
     band: str
     capped_by_critical: bool
+    #: Each pillar's own score, None where nothing was measured this period.
+    pillars: dict[str, float | None]
+    unmeasured: list[str]
 
 
 async def _visible_outlets(
@@ -158,24 +196,53 @@ async def outlet_scores(
     if not outlets:
         return []
 
-    # Three round trips total, whatever the outlet count. The loop that was
-    # here made three per outlet, so this screen got slower as the group grew —
-    # the one thing a multi-outlet comparison must not do.
+    # A fixed number of round trips whatever the outlet count (D16). The row
+    # shows BLENDED health since P15, so it needs every pillar's inputs — but
+    # each is one set-based statement, never one per outlet.
     ids = [outlet["id"] for outlet in outlets]
+    _, closed_at = business_date_bounds(end)
     counts = await metrics.outlet_counts_many(db, outlet_ids=ids, start=start, end=end)
     weights = await _weights_at_many(db, outlet_ids=ids, end=end)
+    sales_in = await pillar_service.sales_inputs_many(db, outlet_ids=ids, start=start, end=end)
+    sales_t = await pillar_service.sales_targets_many(db, outlet_ids=ids, at=closed_at)
+    inv_in = await inv_service.inventory_inputs_many(db, outlet_ids=ids, start=start, end=end)
+    inv_t = await inv_service.inventory_targets_many(db, outlet_ids=ids, at=closed_at)
+    guest_in = await pillar_service.guest_inputs_many(db, outlet_ids=ids, start=start, end=end)
+    guest_t = await pillar_service.guest_targets_many(db, outlet_ids=ids, at=closed_at)
 
     out = []
     for outlet in outlets:
-        score = outlet_score(counts[outlet["id"]], weights[outlet["id"]])
+        oid = outlet["id"]
+        sop = outlet_score(counts[oid], weights[oid])
+        by_key: dict[str, float | None] = {
+            "sop": sop.score,
+            "sales": sales_pillar(sales_in[oid], sales_t[oid]).score,
+            "inventory": inventory_pillar(inv_in[oid], inv_t[oid]).score,
+            "guest": guest_pillar(guest_in[oid], guest_t[oid]).score,
+        }
+        health = blended_health(
+            [
+                PillarReading(
+                    key=str(pillar["key"]),
+                    label=str(pillar["label"]),
+                    weight=float(pillar["weight"]),  # type: ignore[arg-type]
+                    score=by_key[str(pillar["key"])],
+                )
+                for pillar in PILLARS
+            ],
+            green=weights[oid].green,
+            amber=weights[oid].amber,
+        )
         out.append(
             OutletHealthRow(
-                outlet_id=outlet["id"],
+                outlet_id=oid,
                 outlet_code=outlet["code"],
                 outlet_name=outlet["name"],
-                score=score.score,
-                band=score.band,
-                capped_by_critical=score.capped_by_critical,
+                score=health.score,
+                band=health.band,
+                capped_by_critical=sop.capped_by_critical,
+                pillars=by_key,
+                unmeasured=health.unmeasured,
             )
         )
     return out
@@ -216,32 +283,65 @@ async def outlet_health(
     sales = sales_pillar(sales_in[outlet_id], sales_t[outlet_id])
     sales_worst = sales.worst_component
 
+    # The third and fourth pillars (P15), same effective-dating rule.
+    inv_in = await inv_service.inventory_inputs_many(
+        db, outlet_ids=[outlet_id], start=start, end=end
+    )
+    inv_t = await inv_service.inventory_targets_many(db, outlet_ids=[outlet_id], at=closed_at)
+    inventory = inventory_pillar(inv_in[outlet_id], inv_t[outlet_id])
+    guest_in = await pillar_service.guest_inputs_many(
+        db, outlet_ids=[outlet_id], start=start, end=end
+    )
+    guest_t = await pillar_service.guest_targets_many(db, outlet_ids=[outlet_id], at=closed_at)
+    guest = guest_pillar(guest_in[outlet_id], guest_t[outlet_id])
+
+    by_key: dict[str, float | None] = {
+        "sop": score.score,
+        "sales": sales.score,
+        "inventory": inventory.score,
+        "guest": guest.score,
+    }
+    band_by_key: dict[str, str] = {
+        "sop": score.band,
+        "sales": sales.band,
+        "inventory": inventory.band,
+        "guest": guest.band,
+    }
+    health = blended_health(
+        [
+            PillarReading(
+                key=str(pillar["key"]),
+                label=str(pillar["label"]),
+                weight=float(pillar["weight"]),  # type: ignore[arg-type]
+                score=by_key[str(pillar["key"])],
+            )
+            for pillar in PILLARS
+        ],
+        green=weights.green,
+        amber=weights.amber,
+    )
+
     worst = score.worst_component
     return {
         "outlet_id": str(outlet_id),
         "outlet_code": outlet["code"],
         "outlet_name": outlet["name"],
         "period": {"from": str(start), "to": str(end), "days": days},
+        "health": {
+            "score": health.score,
+            "band": health.band,
+            "weights_used": health.weights_used,
+            "weights_total": health.weights_total,
+            "unmeasured": health.unmeasured,
+        },
         "pillars": [
             {
                 **pillar,
-                "score": (
-                    score.score
-                    if pillar["key"] == "sop"
-                    else sales.score
-                    if pillar["key"] == "sales"
-                    else None
-                ),
-                "band": (
-                    score.band
-                    if pillar["key"] == "sop"
-                    else sales.band
-                    if pillar["key"] == "sales"
-                    else "none"
-                ),
-                # Inventory and Guest stay greyed rather than hidden, so the
-                # shape of the finished thing is visible from the start.
-                "status": ("live" if pillar["key"] in ("sop", "sales") else "stage_2"),
+                "score": by_key[str(pillar["key"])],
+                "band": band_by_key[str(pillar["key"])],
+                # A pillar with nothing to measure this period says so rather
+                # than showing a zero.
+                "status": ("live" if by_key[str(pillar["key"])] is not None else "not_measured"),
             }
             for pillar in PILLARS
         ],
@@ -302,5 +402,7 @@ async def outlet_health(
             ),
             "detail": sales.detail,
         },
+        "inventory": _pillar_block(inventory),
+        "guest": _pillar_block(guest),
         "trend": trend,
     }

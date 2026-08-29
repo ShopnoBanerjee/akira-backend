@@ -387,6 +387,10 @@ the plumbing works, not as a calibrated compliance signal.
 
 ## D14 — No blended health score until there is something to blend
 
+**Retired 29 Aug 2026 by D22** — all four pillars now produce, so the blend
+D14 refused to fake is real arithmetic. The reasoning below stands as the
+record of why it waited.
+
 **Decided 27 Aug 2026.** Spec section 5 defines outlet health as four weighted
 pillars summing to 100: Sales 30, SOP 30, Inventory 25, Guest 15. Stage 1
 delivers **only SOP**. P8 therefore ships the SOP compliance score as the
@@ -819,6 +823,58 @@ ingested master bills; the listing's My Amount sum equals the master's GROSS
 for those bills to the paisa (the ₹12.90 gap to net is exactly the
 discounts); 23/25 item names matched the Item Wise report, the two misses
 being Petpooja's own short-name aliases (recorded in OPEN_ITEMS).
+
+---
+
+## D22 — All four pillars produce, and the blend is real (P15)
+
+**Decision.** The Inventory discipline and Guest & throughput pillars go
+live with their gaps declared, and the health card's headline becomes the
+blended score spec section 5 always intended:
+
+    health = sum(pillar score x weight) / sum(weight), over MEASURED pillars
+
+Renormalised over what was measured: an outlet with no confirmed counts yet
+has its inventory pillar named in `unmeasured` and left out of the
+denominator — never padded with a zero, because "not measured" and "failed"
+must not be the same number. The comparison row (`/dashboard/outlets`) now
+shows blended health too, with each pillar's own score alongside. D14
+retires; its reasoning stood until there were four numbers to blend.
+
+**Component honesty, three kinds.** A pillar component is `live` (scored,
+weighted), a `monitor` (shown, never scored — peak-hour share, which the
+spec explicitly says to watch, not target), or `pending` (declared with the
+reason there is no number: recipes, a wastage log, table numbers, a ratings
+source). Weights renormalise over the live set, so a pillar is not punished
+for its declared gaps. Shared arithmetic lives in `app/core/pillar_math.py`;
+the sales pillar keeps its own identical copy because its numbers and digest
+text are pinned and a refactor could only change them by accident.
+
+**What went live, measured from AKIRA's own data (29 Aug 2026):**
+
+- *Inventory*: requisition accuracy (share of finalised lines without the
+  padding flag, computed at requisition time) weighted 0.6; stockout
+  incidents (items counted at zero on confirmed counts, normalised per 28
+  days) weighted 0.4. Live state: unmeasured — arms the day the first count
+  is confirmed, same as the anomaly job.
+- *Guest*: repeat-customer rate (identified customers seen on 2+ trading
+  days) — live baseline 7-9% against a 20% target. Peak-hour share rides as
+  a monitor (51% live, matching the spec's 52.9% baseline). Table turns are
+  pending because Petpooja's exports carry no table numbers (the Area column
+  is empty on all 1,533 real dine-in bills); Google rating is pending for
+  want of a source.
+
+**Phone capture stays in the sales pillar** where D19 put it, though the
+spec lists it under Guest. Moving it would mean re-cutting shipped default
+weights, which silently rewrites historical scores (registry defaults are
+not effective-dated — only overrides are). The split is defensible on its
+own terms: capture is a till habit scored beside the other till habits;
+repeat rate is the guest outcome the habit exists to enable. One metric,
+counted once.
+
+**Two bills the same night are not a repeat.** Repeat means seen on two or
+more TRADING days — a split order at 21:00 and 23:30 is one visit, and the
+business-date rollover keeps the after-midnight half attached to it.
 
 ---
 

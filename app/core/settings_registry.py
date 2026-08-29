@@ -20,7 +20,7 @@ from typing import Any, Literal
 SettingType = Literal["number", "integer", "boolean", "string", "time"]
 
 #: Groups drive the admin UI's sectioning and each group's permission note.
-SettingGroup = Literal["scoring", "sales", "integrity", "ai_review", "jobs"]
+SettingGroup = Literal["scoring", "sales", "inventory", "guest", "integrity", "ai_review", "jobs"]
 
 
 @dataclass(frozen=True)
@@ -126,6 +126,76 @@ REGISTRY: dict[str, SettingDef] = {
             minimum=0,
             maximum=100,
             outlet_overridable=True,
+        ),
+        # --- Inventory discipline pillar (spec section 5 / P15) ------------
+        SettingDef(
+            "inventory.target.clean_req_share",
+            "inventory",
+            "number",
+            0.90,
+            "Requisition accuracy target",
+            "Green when at least this share of finalised requisition lines "
+            "stayed within need (no padding flag).",
+            minimum=0,
+            maximum=1,
+            outlet_overridable=True,
+        ),
+        SettingDef(
+            "inventory.max.stockouts_28d",
+            "inventory",
+            "number",
+            2,
+            "Stockout ceiling per 28 days",
+            "Item-lines counted at zero on confirmed counts, normalised to a "
+            "28-day rate. At or under the ceiling scores 100.",
+            minimum=0,
+            outlet_overridable=True,
+        ),
+        SettingDef(
+            "inventory.weight.requisition_accuracy",
+            "inventory",
+            "number",
+            0.6,
+            "Requisition accuracy weight",
+            "Share of the inventory pillar carried by requisition accuracy. "
+            "Weights renormalise over whatever is measured in the period.",
+            minimum=0,
+            maximum=1,
+        ),
+        SettingDef(
+            "inventory.weight.stockouts",
+            "inventory",
+            "number",
+            0.4,
+            "Stockout weight",
+            "Share of the inventory pillar carried by stockout incidents.",
+            minimum=0,
+            maximum=1,
+        ),
+        # --- Guest & throughput pillar (spec section 5 / P15) --------------
+        SettingDef(
+            "guest.target.repeat_rate",
+            "guest",
+            "number",
+            0.20,
+            "Repeat-customer rate target",
+            "Green when at least this share of phone-identified customers "
+            "were seen on two or more trading days. Live baseline at build "
+            "time: 9%.",
+            minimum=0,
+            maximum=1,
+            outlet_overridable=True,
+        ),
+        SettingDef(
+            "guest.weight.repeat",
+            "guest",
+            "number",
+            1.0,
+            "Repeat rate weight",
+            "Share of the guest pillar carried by the repeat rate — currently "
+            "all of it, re-cut when table turns or a ratings source arrive.",
+            minimum=0,
+            maximum=1,
         ),
         # --- Integrity thresholds (spec section 4.2) -----------------------
         SettingDef(

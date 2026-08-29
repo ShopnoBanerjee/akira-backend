@@ -6957,6 +6957,27 @@
           "capped_by_critical": {
             "type": "boolean",
             "title": "Capped By Critical"
+          },
+          "pillars": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Pillars"
+          },
+          "unmeasured": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unmeasured"
           }
         },
         "type": "object",
@@ -6966,7 +6987,9 @@
           "outlet_name",
           "score",
           "band",
-          "capped_by_critical"
+          "capped_by_critical",
+          "pillars",
+          "unmeasured"
         ],
         "title": "OutletHealthRow"
       },
