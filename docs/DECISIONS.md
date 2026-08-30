@@ -878,6 +878,76 @@ business-date rollover keeps the after-midnight half attached to it.
 
 ---
 
+## D23 — Forecasting starts boring, and the AI system is a promotion ladder (P16)
+
+**Decision.** Spec 5.1's baseline ships exactly as written:
+
+    forecast(outlet, date) = median(same weekday, last 4 same-weekday
+                             trading days)
+                           x trend_factor(last 14d vs prior 14d per trading
+                             day, clamped 0.8-1.3)
+                           x event_multiplier(manual flag)
+
+Pure module (`sales/forecast.py`), refusals over guesses: fewer than two
+same-weekday samples is no forecast with the reason; a trend window thinner
+than seven trading days on either side holds at 1.0 and says so; covers are
+forecast only where the covers history is dense, because Petpooja records
+them patchily and null beats invented diners. The trend is per trading day,
+not raw sums — twelve open days against six is not growth.
+
+**A forecast is only a forecast if it was made in advance.** The nightly
+job (05:30, after materialisation closes yesterday) stores the horizon's
+rows and they are never updated — unique (outlet, target_date, made_on,
+model), `on conflict do nothing`. MAPE is computed from those rows against
+actuals, headline at horizon 1. The live API view calls the same compute,
+so the number a manager sees is the number the job stores.
+
+**Event flags are the human channel.** `forecast_events`: a manager writes
+"Durga Puja weekend, 1.3x" before it happens; outlet-specific beats
+group-wide; only a global role flags every outlet. Every applied multiplier
+is named in the forecast's working.
+
+### The advanced system — designed now, gated by the baseline
+
+The schema is the design: the `model` column plus immutable in-advance rows
+make champion-vs-challenger a GROUP BY, not a refactor. The ladder:
+
+1. **`baseline.v1` is the champion** and runs forever, even after it loses —
+   a permanently-running shadow is the regression alarm for whatever
+   replaces it. Any change to its arithmetic is a new model string.
+2. **The gate is the spec's**: no learned model until the baseline has 12+
+   weeks of stored MAPE history (so, from ~late November 2026) AND a
+   challenger genuinely beats it. "Beats" means: lower day-ahead MAPE on
+   stored in-advance forecasts for four consecutive weeks — never on
+   backtests alone, which flatter every model.
+3. **The first challenger is gradient-boosted trees, in-process** (sklearn
+   HistGradientBoosting — already-installed ecosystem, no new service) over
+   deterministic features: weekday, lag-1/-7/-14 nets, trailing medians,
+   days-since-open, event flags, an Indian holiday table. It runs inside
+   the same nightly job and writes rows under `gbt.v1`. NOT Prophet/ARIMA
+   (the spec's own warning: they overfit six weeks of noise) and NOT an
+   external forecasting API.
+4. **Promotion is a settings key** (`forecast.champion_model`, added when a
+   challenger exists), effective-dated like everything else (D9), so which
+   model fed requisitions on a given week is answerable forever.
+5. **The LLM never predicts a number** — section 6's rule holds. Its two
+   forecasting jobs, both Gemini-sized: narrate the forecast in the daily
+   digest from computed facts (the narrate() pattern from D19, facts in,
+   prose out, None on failure); and PROPOSE event flags — scan a holiday
+   calendar or local listings and draft forecast_events rows that a manager
+   confirms. A proposed multiplier is a suggestion with a source; a
+   confirmed one is a decision with a name on it.
+6. **Weather, delivery-platform signals, and covers-based labour planning**
+   wait until the MAPE history can prove they pay for their complexity.
+   Each lands as features on the challenger, never as a new model family.
+
+What the forecast feeds, in order: requisition suggestions (forecast covers
+x recipe quantities, once recipes exist — the same gap the inventory
+pillar's variance component waits on), then labour scheduling. Until then
+it feeds the manager's eye, which is where trust gets built anyway.
+
+---
+
 ## Assumptions in force — challenge these if wrong
 
 - **A1 — `ops_manager` approves outlet-manager submissions.** Spec open question

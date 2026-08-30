@@ -6,16 +6,20 @@ get the rows in truthfully so that dashboard has something honest to read.
 """
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, Request, UploadFile
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 
+from app.core.audit import record
+from app.core.business_date import business_date as to_business_date
+from app.core.business_date import outlet_now
 from app.core.deps import CurrentUserDep, DbDep, require_management
+from app.core.enums import AuditAction
 from app.core.errors import ForbiddenError, NotFoundError
-from app.domains.sales import service
+from app.domains.sales import forecast_service, service
 
 router = APIRouter(prefix="/sales", tags=["sales"])
 
@@ -89,6 +93,35 @@ class ItemSummaryRow(BaseModel):
     bills: int
     first_date: date
     last_date: date
+
+
+class ForecastDay(BaseModel):
+    target_date: date
+    #: Null when the model refused — `reason` says why.
+    net_paise: int | None
+    covers: int | None
+    reason: str | None
+    #: The working: median, sample dates, trend factor, event multiplier.
+    components: dict[str, Any]
+
+
+class ForecastEventRow(BaseModel):
+    id: uuid.UUID
+    #: Null means the event applies to every outlet.
+    outlet_id: uuid.UUID | None
+    event_date: date
+    multiplier: float
+    label: str
+    created_by_name: str | None = None
+    created_at: datetime
+
+
+class ForecastEventCreate(BaseModel):
+    #: Omit for a group-wide event (a public holiday is nobody's override).
+    outlet_id: uuid.UUID | None = None
+    event_date: date
+    multiplier: Annotated[float, Field(gt=0, le=5)]
+    label: Annotated[str, Field(min_length=1, max_length=120)]
 
 
 @router.post(
@@ -248,3 +281,166 @@ async def items(
         db, user, outlet_id=outlet_id, date_from=date_from, date_to=date_to
     )
     return [ItemSummaryRow(**r) for r in rows]
+
+
+@router.get(
+    "/forecast",
+    response_model=list[ForecastDay],
+    dependencies=[Depends(require_management)],
+    summary="The baseline forecast for the coming days",
+)
+async def forecast(
+    db: DbDep,
+    user: CurrentUserDep,
+    outlet_id: Annotated[uuid.UUID, Query()],
+    days: Annotated[int, Query(ge=1, le=14)] = 7,
+) -> list[ForecastDay]:
+    """Spec 5.1's baseline: median of the last four same weekdays, times a
+    clamped 14-day trend, times any manual event flag. Every row carries its
+    working — the sample dates, the factor, the multiplier — because a
+    forecast a manager cannot check is one they learn to ignore.
+
+    This is the LIVE view; the nightly job stores the same numbers so
+    accuracy is scored against what was predicted in advance.
+    """
+    if not user.can_access_outlet(outlet_id):
+        raise ForbiddenError("You do not have access to that outlet.")
+    as_of = to_business_date(outlet_now())
+    forecasts = await forecast_service.compute(db, outlet_id, as_of=as_of, horizon=days)
+    return [
+        ForecastDay(
+            target_date=f.target_date,
+            net_paise=f.net_paise,
+            covers=f.covers,
+            reason=f.reason,
+            components=f.components,
+        )
+        for f in forecasts
+    ]
+
+
+@router.get(
+    "/forecast/accuracy",
+    dependencies=[Depends(require_management)],
+    summary="How the stored forecasts scored against reality",
+)
+async def forecast_accuracy(
+    db: DbDep,
+    user: CurrentUserDep,
+    outlet_id: Annotated[uuid.UUID, Query()],
+    weeks: Annotated[int, Query(ge=1, le=26)] = 8,
+) -> dict[str, Any]:
+    """MAPE against the rows the nightly job stored BEFORE those days
+    traded. The spec's graduation rule reads from here: a learned model may
+    replace the baseline only when this history says it genuinely loses."""
+    if not user.can_access_outlet(outlet_id):
+        raise ForbiddenError("You do not have access to that outlet.")
+    return await forecast_service.accuracy(db, outlet_id, weeks=weeks)
+
+
+@router.get(
+    "/forecast/events",
+    response_model=list[ForecastEventRow],
+    dependencies=[Depends(require_management)],
+    summary="Event flags in the forecast window",
+)
+async def forecast_events(
+    db: DbDep,
+    user: CurrentUserDep,
+    outlet_id: Annotated[uuid.UUID, Query()],
+    date_from: date | None = Query(default=None, alias="from"),
+    date_to: date | None = Query(default=None, alias="to"),
+) -> list[ForecastEventRow]:
+    if not user.can_access_outlet(outlet_id):
+        raise ForbiddenError("You do not have access to that outlet.")
+    today = to_business_date(outlet_now())
+    rows = await forecast_service.list_events(
+        db,
+        outlet_id,
+        start=date_from or today,
+        end=date_to or today + timedelta(days=60),
+    )
+    return [ForecastEventRow(**r) for r in rows]
+
+
+@router.post(
+    "/forecast/events",
+    response_model=ForecastEventRow,
+    dependencies=[Depends(require_management)],
+    summary="Flag an event before it happens",
+)
+async def create_forecast_event(
+    request: Request,
+    body: ForecastEventCreate,
+    db: DbDep,
+    user: CurrentUserDep,
+) -> ForecastEventRow:
+    """The manual override in the spec's formula: "Durga Puja weekend,
+    expect 1.3x", written down in advance. Outlet-scoped, or group-wide
+    when no outlet is named."""
+    if body.outlet_id is not None and not user.can_access_outlet(body.outlet_id):
+        raise ForbiddenError("You do not have access to that outlet.")
+    if body.outlet_id is None and not user.is_global:
+        raise ForbiddenError("Only a global role can flag an event for every outlet.")
+    row = await forecast_service.create_event(
+        db,
+        outlet_id=body.outlet_id,
+        event_date=body.event_date,
+        multiplier=body.multiplier,
+        label=body.label,
+        created_by=user.profile_id,
+    )
+    await record(
+        db,
+        actor_profile_id=user.profile_id,
+        outlet_id=body.outlet_id,
+        entity_table="forecast_events",
+        entity_id=row["id"],
+        action=AuditAction.CREATE,
+        after={"date": str(body.event_date), "multiplier": body.multiplier, "label": body.label},
+        **_ctx(request),
+    )
+    await db.commit()
+    return ForecastEventRow(**row, created_by_name=user.full_name)
+
+
+@router.delete(
+    "/forecast/events/{event_id}",
+    dependencies=[Depends(require_management)],
+    summary="Remove an event flag",
+)
+async def delete_forecast_event(
+    event_id: uuid.UUID,
+    request: Request,
+    db: DbDep,
+    user: CurrentUserDep,
+) -> dict[str, Any]:
+    row = (
+        (
+            await db.execute(
+                text("select outlet_id from forecast_events where id = :id"),
+                {"id": event_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if row is None:
+        raise NotFoundError("That event flag does not exist.")
+    if row["outlet_id"] is not None and not user.can_access_outlet(row["outlet_id"]):
+        raise ForbiddenError("You do not have access to that outlet.")
+    if row["outlet_id"] is None and not user.is_global:
+        raise ForbiddenError("Only a global role can remove a group-wide event.")
+    await forecast_service.delete_event(db, event_id)
+    await record(
+        db,
+        actor_profile_id=user.profile_id,
+        outlet_id=row["outlet_id"],
+        entity_table="forecast_events",
+        entity_id=event_id,
+        action=AuditAction.DELETE,
+        after=None,
+        **_ctx(request),
+    )
+    await db.commit()
+    return {"id": str(event_id), "deleted": True}

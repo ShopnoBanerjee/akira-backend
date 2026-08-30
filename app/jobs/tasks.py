@@ -36,10 +36,11 @@ MATERIALISE = "materialise_runs"
 MARK_MISSED = "mark_missed"
 DAILY_DIGEST = "daily_digest"
 STOCK_ANOMALIES = "stock_anomalies"
+SALES_FORECAST = "sales_forecast"
 
 #: Everything an admin may trigger by hand. The photo passes are not here:
 #: they are attached to a specific upload, not to a schedule.
-MANUAL_JOBS = (MATERIALISE, MARK_MISSED, DAILY_DIGEST, STOCK_ANOMALIES)
+MANUAL_JOBS = (MATERIALISE, MARK_MISSED, DAILY_DIGEST, STOCK_ANOMALIES, SALES_FORECAST)
 
 
 # ---------------------------------------------------------------------------
@@ -306,6 +307,15 @@ async def stock_anomalies(*, triggered_by: uuid.UUID | None = None) -> dict[str,
     return await run_job(STOCK_ANOMALIES, anomalies_service.run, triggered_by=triggered_by)
 
 
+async def sales_forecast(*, triggered_by: uuid.UUID | None = None) -> dict[str, Any]:
+    """The spec-5.1 baseline forecast for every outlet's next horizon,
+    stored so MAPE is scored against what was actually predicted in
+    advance. Safe to run twice: an existing (target, made_on) row stands."""
+    from app.domains.sales import forecast_service
+
+    return await run_job(SALES_FORECAST, forecast_service.run, triggered_by=triggered_by)
+
+
 async def run_by_name(
     name: str, *, triggered_by: uuid.UUID | None = None, for_date: date | None = None
 ) -> dict[str, Any]:
@@ -318,4 +328,6 @@ async def run_by_name(
         return await daily_digest(for_date=for_date, triggered_by=triggered_by)
     if name == STOCK_ANOMALIES:
         return await stock_anomalies(triggered_by=triggered_by)
+    if name == SALES_FORECAST:
+        return await sales_forecast(triggered_by=triggered_by)
     raise ValueError(f"{name} is not a job that can be run by hand.")

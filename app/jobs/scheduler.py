@@ -53,6 +53,7 @@ class Schedule:
     digest_at: time
     missed_every_minutes: int
     anomalies_at: time
+    forecast_at: time
 
 
 async def read_schedule() -> Schedule:
@@ -62,6 +63,7 @@ async def read_schedule() -> Schedule:
             digest_at=await resolve_time(db, "jobs.digest_time"),
             missed_every_minutes=await resolve_int(db, "jobs.missed_check_minutes"),
             anomalies_at=await resolve_time(db, "jobs.anomalies_time"),
+            forecast_at=await resolve_time(db, "jobs.forecast_time"),
         )
 
 
@@ -125,6 +127,21 @@ def _apply(scheduler: AsyncIOScheduler, schedule: Schedule) -> None:
         name="Consumption windows and stock anomalies",
         replace_existing=True,
         # Derived data: running late loses nothing, so the grace is generous.
+        misfire_grace_time=3600,
+        coalesce=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        tasks.sales_forecast,
+        CronTrigger(
+            hour=schedule.forecast_at.hour,
+            minute=schedule.forecast_at.minute,
+            timezone=OUTLET_TZ,
+        ),
+        id=tasks.SALES_FORECAST,
+        name="Sales forecast baseline",
+        replace_existing=True,
+        # A late forecast is still a forecast made before the day trades.
         misfire_grace_time=3600,
         coalesce=True,
         max_instances=1,

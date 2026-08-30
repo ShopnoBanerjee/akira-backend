@@ -379,6 +379,46 @@ REGISTRY: dict[str, SettingDef] = {
             minimum=1,
             outlet_overridable=True,
         ),
+        # --- Forecasting baseline (spec section 5.1 / P16) -----------------
+        SettingDef(
+            "jobs.forecast_time",
+            "jobs",
+            "time",
+            "05:30",
+            "Forecast run time",
+            "When the nightly forecast pass runs. After the 05:00 "
+            "materialisation, so yesterday's closed trading day is history.",
+        ),
+        SettingDef(
+            "forecast.horizon_days",
+            "sales",
+            "integer",
+            7,
+            "Forecast horizon",
+            "How many days ahead the nightly pass forecasts and stores.",
+            minimum=1,
+            maximum=14,
+        ),
+        SettingDef(
+            "forecast.trend_clamp_min",
+            "sales",
+            "number",
+            0.8,
+            "Trend clamp floor",
+            "Spec 5.1: the 14-day trend factor never drops below this.",
+            minimum=0.1,
+            maximum=1,
+        ),
+        SettingDef(
+            "forecast.trend_clamp_max",
+            "sales",
+            "number",
+            1.3,
+            "Trend clamp ceiling",
+            "Spec 5.1: the 14-day trend factor never rises above this.",
+            minimum=1,
+            maximum=3,
+        ),
         # --- Sales pillar targets (spec section 5 / P12) -------------------
         # Baselines from AKIRA's actual 17 Jul - 25 Aug trading data, seeded
         # as the spec's Stage-2 target bands and reviewed monthly. All

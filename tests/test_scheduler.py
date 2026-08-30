@@ -28,6 +28,7 @@ def a_schedule(**overrides: object) -> sched.Schedule:
         "digest_at": time(9, 0),
         "missed_every_minutes": 15,
         "anomalies_at": time(5, 45),
+        "forecast_at": time(5, 30),
     }
     return sched.Schedule(**{**base, **overrides})  # type: ignore[arg-type]
 
@@ -60,7 +61,7 @@ class TestReconcileOnlyActsOnChange:
         fake = _FakeScheduler()
         monkeypatch.setattr(sched, "_scheduler", fake)
         sched._apply(fake, a_schedule())  # type: ignore[arg-type]
-        assert len(fake.added) == 4
+        assert len(fake.added) == 5
         fake.added.clear()
 
         async def unchanged() -> sched.Schedule:
@@ -91,6 +92,7 @@ class TestReconcileOnlyActsOnChange:
                 sched.tasks.MARK_MISSED,
                 sched.tasks.DAILY_DIGEST,
                 sched.tasks.STOCK_ANOMALIES,
+                sched.tasks.SALES_FORECAST,
             ]
         )
 
