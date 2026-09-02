@@ -120,6 +120,55 @@ async def _run_outlet(db: AsyncSession, outlet_id: uuid.UUID) -> dict[str, Any]:
         .all()
     )
 
+    # Theoretical consumption inputs (P17): what the recipes say each window
+    # SHOULD have used, from item-day sales. Three prefetches, then pure
+    # lookups inside the loop. Dates stay ISO strings — lexicographic order
+    # is date order, and this module does no date maths.
+    sales_days = {
+        str(r[0])
+        for r in await db.execute(
+            text("select distinct report_date from sales_item_days where outlet_id = :o"),
+            {"o": outlet_id},
+        )
+    }
+    recipe_items = {
+        str(r[0])
+        for r in await db.execute(
+            text(
+                "select distinct rl.item_id from recipe_lines rl"
+                " join recipes r on r.id = rl.recipe_id where r.is_active"
+            )
+        )
+    }
+    theo_by_item_day: dict[tuple[str, str], float] = {
+        (str(r[0]), str(r[1])): float(r[2])
+        for r in await db.execute(
+            text(
+                """
+                select rl.item_id, sid.report_date,
+                       sum(sid.qty * rl.qty_per_unit) as qty
+                  from sales_item_days sid
+                  join recipes r on r.menu_item_name = sid.item_name and r.is_active
+                  join recipe_lines rl on rl.recipe_id = r.id
+                 where sid.outlet_id = :o
+                 group by rl.item_id, sid.report_date
+                """
+            ),
+            {"o": outlet_id},
+        )
+    }
+
+    def theoretical_for(item_id: str, from_date: str, to_date: str) -> float | None:
+        """Sum of recipe-implied usage across the window, or None when it
+        cannot honestly be computed: no item-day sales cover the window, or
+        no active recipe mentions the item."""
+        if item_id not in recipe_items:
+            return None
+        covered = [d for d in sales_days if from_date < d <= to_date]
+        if not covered:
+            return None
+        return sum(theo_by_item_day.get((item_id, d), 0.0) for d in covered)
+
     windows_written = 0
     raised: list[str] = []
     skipped_open = 0
@@ -143,7 +192,10 @@ async def _run_outlet(db: AsyncSession, outlet_id: uuid.UUID) -> dict[str, Any]:
 
         item_windows = consumption.windows(ordered, req_map)
         per_cover_series: list[float] = []
+        latest_theoretical: float | None = None
         for window in item_windows:
+            theoretical = theoretical_for(item_id, window.from_date, window.to_date)
+            latest_theoretical = theoretical
             covers = (
                 await db.execute(
                     text(
@@ -168,15 +220,17 @@ async def _run_outlet(db: AsyncSession, outlet_id: uuid.UUID) -> dict[str, Any]:
                     insert into stock_consumption
                         (outlet_id, item_id, from_count_id, to_count_id,
                          from_date, to_date, days_between, from_qty, to_qty,
-                         requisitioned_qty, apparent_consumption, covers, detail)
+                         requisitioned_qty, apparent_consumption, theoretical_qty,
+                         covers, detail)
                     values (:o, :item, :fc, :tc, cast(:fd as date),
                             cast(:td as date),
                             cast(:td as date) - cast(:fd as date),
-                            :fq, :tq, :req, :apparent, :covers,
+                            :fq, :tq, :req, :apparent, :theoretical, :covers,
                             cast(:detail as jsonb))
                     on conflict (to_count_id, item_id) do update set
                         requisitioned_qty = excluded.requisitioned_qty,
                         apparent_consumption = excluded.apparent_consumption,
+                        theoretical_qty = excluded.theoretical_qty,
                         covers = excluded.covers,
                         detail = excluded.detail
                     """
@@ -192,6 +246,7 @@ async def _run_outlet(db: AsyncSession, outlet_id: uuid.UUID) -> dict[str, Any]:
                     "tq": window.to_qty,
                     "req": window.requisitioned_qty,
                     "apparent": window.apparent_consumption,
+                    "theoretical": theoretical,
                     "covers": covers,
                     "detail": json.dumps(window.detail),
                 },
@@ -213,6 +268,14 @@ async def _run_outlet(db: AsyncSession, outlet_id: uuid.UUID) -> dict[str, Any]:
                 z_threshold=float(thresholds["anomaly.z_threshold"]),
             ),
         ]
+        if item_windows:
+            findings.append(
+                consumption.zero_sales_consumption(
+                    item_name=entry["name"],
+                    apparent=item_windows[-1].apparent_consumption,
+                    theoretical=latest_theoretical,
+                )
+            )
         item_reqs = [rr for rr in req_rows if str(rr["item_id"]) == item_id]
         findings.append(
             consumption.padding_consistent(

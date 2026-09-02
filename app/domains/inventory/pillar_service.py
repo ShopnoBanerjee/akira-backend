@@ -21,8 +21,10 @@ from app.domains.inventory.pillar import InventoryInputs, InventoryTargets
 _TARGET_KEYS = [
     "inventory.target.clean_req_share",
     "inventory.max.stockouts_28d",
+    "inventory.max.variance",
     "inventory.weight.requisition_accuracy",
     "inventory.weight.stockouts",
+    "inventory.weight.variance",
     "scoring.band.green",
     "scoring.band.amber",
 ]
@@ -55,15 +57,33 @@ _AGG_SQL = text(
            and l.qty is not null
            and c.business_date between :start and :end
          group by c.outlet_id
+    ),
+    variance as (
+        select outlet_id,
+               count(*) as variance_windows,
+               percentile_cont(0.5) within group (
+                   order by abs(apparent_consumption - theoretical_qty)
+                            / theoretical_qty
+               ) as median_abs_variance
+          from stock_consumption
+         where outlet_id = any (cast(:ids as uuid[]))
+           and to_date between :start and :end
+           and apparent_consumption is not null
+           and theoretical_qty is not null
+           and theoretical_qty > 0
+         group by outlet_id
     )
     select w.outlet_id,
            coalesce(r.req_lines, 0)      as req_lines,
            coalesce(r.padded_lines, 0)   as padded_lines,
            coalesce(c.counted_lines, 0)  as counted_lines,
-           coalesce(c.stockout_lines, 0) as stockout_lines
+           coalesce(c.stockout_lines, 0) as stockout_lines,
+           coalesce(v.variance_windows, 0) as variance_windows,
+           cast(v.median_abs_variance as float8) as median_abs_variance
       from wanted w
       left join reqs r on r.outlet_id = w.outlet_id
       left join counts c on c.outlet_id = w.outlet_id
+      left join variance v on v.outlet_id = w.outlet_id
     """
 )
 
@@ -88,6 +108,10 @@ async def inventory_inputs_many(
             padded_lines=int(r["padded_lines"]),
             counted_lines=int(r["counted_lines"]),
             stockout_lines=int(r["stockout_lines"]),
+            variance_windows=int(r["variance_windows"]),
+            median_abs_variance=(
+                float(r["median_abs_variance"]) if r["median_abs_variance"] is not None else None
+            ),
         )
         for r in rows
     }
@@ -97,8 +121,10 @@ def _targets(values: dict[str, Any]) -> InventoryTargets:
     return InventoryTargets(
         clean_req_share=float(values["inventory.target.clean_req_share"]),
         max_stockouts_28d=float(values["inventory.max.stockouts_28d"]),
+        max_variance=float(values["inventory.max.variance"]),
         w_requisition=float(values["inventory.weight.requisition_accuracy"]),
         w_stockouts=float(values["inventory.weight.stockouts"]),
+        w_variance=float(values["inventory.weight.variance"]),
         green=float(values["scoring.band.green"]),
         amber=float(values["scoring.band.amber"]),
     )

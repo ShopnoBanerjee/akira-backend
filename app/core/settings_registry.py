@@ -152,10 +152,23 @@ REGISTRY: dict[str, SettingDef] = {
             outlet_overridable=True,
         ),
         SettingDef(
+            "inventory.max.variance",
+            "inventory",
+            "number",
+            0.2,
+            "Theoretical variance ceiling",
+            "Spec section 6: a count deviating more than 20% from what the "
+            "recipes imply is worth attention. Median gap at or under this "
+            "scores 100.",
+            minimum=0,
+            maximum=1,
+            outlet_overridable=True,
+        ),
+        SettingDef(
             "inventory.weight.requisition_accuracy",
             "inventory",
             "number",
-            0.6,
+            0.4,
             "Requisition accuracy weight",
             "Share of the inventory pillar carried by requisition accuracy. "
             "Weights renormalise over whatever is measured in the period.",
@@ -166,9 +179,22 @@ REGISTRY: dict[str, SettingDef] = {
             "inventory.weight.stockouts",
             "inventory",
             "number",
-            0.4,
+            0.3,
             "Stockout weight",
             "Share of the inventory pillar carried by stockout incidents.",
+            minimum=0,
+            maximum=1,
+        ),
+        SettingDef(
+            "inventory.weight.variance",
+            "inventory",
+            "number",
+            0.3,
+            "Theoretical variance weight",
+            "Share of the inventory pillar carried by theoretical-vs-actual "
+            "variance. Weights renormalise over whatever is measured. The "
+            "P15 defaults were re-cut here (P17) before the pillar ever "
+            "produced a live number, so no history moved.",
             minimum=0,
             maximum=1,
         ),

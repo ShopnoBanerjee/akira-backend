@@ -1349,6 +1349,177 @@
         }
       }
     },
+    "/inventory/recipes": {
+      "get": {
+        "tags": [
+          "inventory"
+        ],
+        "summary": "Every recipe, with its ingredient lines",
+        "operationId": "list_recipes_inventory_recipes_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Recipe"
+                  },
+                  "type": "array",
+                  "title": "Response List Recipes Inventory Recipes Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/inventory/recipes/unmapped": {
+      "get": {
+        "tags": [
+          "inventory"
+        ],
+        "summary": "Sold menu items with no recipe yet",
+        "description": "The worklist, ordered by units sold \u2014 map the ramen that sells thirty\na night before the seasonal special. Theoretical consumption only counts\nwhat is mapped, so this list is the honesty gap made visible.",
+        "operationId": "unmapped_inventory_recipes_unmapped_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UnmappedName"
+                  },
+                  "type": "array",
+                  "title": "Response Unmapped Inventory Recipes Unmapped Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/inventory/recipes/{menu_item_name}": {
+      "put": {
+        "tags": [
+          "inventory"
+        ],
+        "summary": "Create or replace one dish's recipe",
+        "description": "Lines are replaced wholesale \u2014 a recipe is one fact about one dish.\nThe name must match what Petpooja prints on bills; the unmapped list is\nwhere those exact strings come from.",
+        "operationId": "save_recipe_inventory_recipes__menu_item_name__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "menu_item_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Menu Item Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecipeSave"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Save Recipe Inventory Recipes  Menu Item Name  Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inventory/recipes/{recipe_id}": {
+      "delete": {
+        "tags": [
+          "inventory"
+        ],
+        "summary": "Remove a recipe",
+        "operationId": "delete_recipe_inventory_recipes__recipe_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "recipe_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Recipe Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Recipe Inventory Recipes  Recipe Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/inventory/counts": {
       "post": {
         "tags": [
@@ -7818,6 +7989,132 @@
         ],
         "title": "QueueRow"
       },
+      "Recipe": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "menu_item_name": {
+            "type": "string",
+            "title": "Menu Item Name"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/RecipeLineOut"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "menu_item_name",
+          "is_active",
+          "notes",
+          "lines"
+        ],
+        "title": "Recipe"
+      },
+      "RecipeLineIn": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Item Id"
+          },
+          "qty_per_unit": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Qty Per Unit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "item_id",
+          "qty_per_unit"
+        ],
+        "title": "RecipeLineIn"
+      },
+      "RecipeLineOut": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Item Id"
+          },
+          "item_name": {
+            "type": "string",
+            "title": "Item Name"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "qty_per_unit": {
+            "type": "number",
+            "title": "Qty Per Unit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "item_id",
+          "item_name",
+          "unit",
+          "qty_per_unit"
+        ],
+        "title": "RecipeLineOut"
+      },
+      "RecipeSave": {
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/RecipeLineIn"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Lines"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "lines"
+        ],
+        "title": "RecipeSave"
+      },
       "ReferencePhoto": {
         "properties": {
           "id": {
@@ -8913,6 +9210,35 @@
           "assignment_count"
         ],
         "title": "TemplateSummary"
+      },
+      "UnmappedName": {
+        "properties": {
+          "item_name": {
+            "type": "string",
+            "title": "Item Name"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units"
+          },
+          "last_seen": {
+            "title": "Last Seen"
+          }
+        },
+        "type": "object",
+        "required": [
+          "item_name",
+          "units",
+          "last_seen"
+        ],
+        "title": "UnmappedName"
       },
       "UpdateAssignmentRequest": {
         "properties": {

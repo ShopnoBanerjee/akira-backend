@@ -144,3 +144,26 @@ on top of that would have muddied the signal.
 - **There is no blended outlet health score**, and that is D14, not an
   omission. Stage 1 measures one of four pillars; a number built from a quarter
   of the evidence would be worse than none.
+
+---
+
+## Waiting on people
+
+### An Akira Item Report: Day Wise export (P17)
+
+The adapter, recipes and theoretical-consumption arithmetic are live and
+tested, but no Akira export of this report has been uploaded yet — the
+shape was established from an older export of a different restaurant. Until
+one arrives, `sales_item_days` is empty and every dependent surface
+(variance component, zero-sales anomaly, true units) reads "pending" with
+its reason. Export it from Petpooja (Reports → Item Report: Day Wise) for
+the same period the master covers and drop it on the Sales page.
+
+### No restaurant-name guard on sales uploads
+
+None of the three adapters refuses a file whose preamble names a different
+restaurant — uploading another venue's export to an Akira outlet would
+ingest silently. The uploader picks the outlet, so the blast radius is one
+person's mistake, but a preamble check against the outlet's configured
+restaurant name would close it. Applies equally to master, listing and
+item-days uploads.

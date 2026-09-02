@@ -41,7 +41,7 @@ from app.core.config import get_settings
 from app.core.deps import CurrentUser
 from app.core.enums import AuditAction, UploadStatus
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
-from app.domains.sales import petpooja, petpooja_listing
+from app.domains.sales import petpooja, petpooja_itemdays, petpooja_listing
 from app.integrations import storage
 
 XLSX_TYPES = {
@@ -53,6 +53,7 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 SOURCE_ORDERS = "petpooja_orders"
 SOURCE_LISTING = "petpooja_listing"
+SOURCE_ITEMDAYS = "petpooja_itemdays"
 
 
 def detect_source(data: bytes) -> str:
@@ -80,11 +81,14 @@ def detect_source(data: bytes) -> str:
                 return SOURCE_ORDERS
             if all(m in cells for m in petpooja_listing.LISTING_HEADER_MARKERS):
                 return SOURCE_LISTING
+            if all(m in cells for m in petpooja_itemdays.ITEMDAYS_HEADER_MARKERS):
+                return SOURCE_ITEMDAYS
     finally:
         workbook.close()
     raise ValidationError(
-        "This is not a report this system can read. Supported: the Orders "
-        "Master Report and the Order Listing report, both from Petpooja."
+        "This is not a report this system can read. Supported, all from "
+        "Petpooja: the Orders Master Report, the Order Listing report, and "
+        "the Item Report: Day Wise."
     )
 
 
@@ -255,6 +259,8 @@ async def parse_upload(db: AsyncSession, upload_id: uuid.UUID) -> dict[str, Any]
         )
         if upload["source"] == SOURCE_LISTING:
             return await _parse_listing(db, upload, data)
+        if upload["source"] == SOURCE_ITEMDAYS:
+            return await _parse_itemdays(db, upload, data)
         result = petpooja.parse_orders(data, hash_phone=phone_hasher())
     except Exception as exc:
         await db.rollback()
@@ -567,6 +573,110 @@ async def _write_items(
             },
         )
     return {"matched": len(by_bill), "unmatched": unmatched, "items": len(order_ids)}
+
+
+async def _parse_itemdays(db: AsyncSession, upload: Any, data: bytes) -> dict[str, Any]:
+    """The Item Report: Day Wise path — true units per menu item per day.
+
+    Upserts on (outlet, report_date, item_name): exports overlap the same
+    way the master's do, and a corrected day must overwrite, not duplicate.
+    The report's own Total quantity is kept beside our sum on the upload row
+    (via parsed figures in the result), so a disagreement is visible.
+    """
+    result = petpooja_itemdays.parse_itemdays(data)
+    written = await _write_item_days(db, upload["outlet_id"], upload["id"], result)
+
+    import json
+
+    await db.execute(
+        text(
+            """
+            update data_uploads
+               set status = 'parsed',
+                   row_count = :rows,
+                   period_start = :start,
+                   period_end = :end,
+                   warnings = cast(:warnings as jsonb),
+                   adapter_version = :adapter,
+                   parsed_net_paise = :net,
+                   parsed_at = now(),
+                   error_detail = null
+             where id = :id
+            """
+        ),
+        {
+            "id": upload["id"],
+            "rows": len(result.rows),
+            "start": result.period_start,
+            "end": result.period_end,
+            "warnings": json.dumps(result.warnings, default=str),
+            "adapter": result.adapter_version,
+            "net": result.net_paise,
+        },
+    )
+    await db.commit()
+    return {
+        "upload_id": str(upload["id"]),
+        "item_days_parsed": len(result.rows),
+        "inserted": written["inserted"],
+        "updated": written["updated"],
+        "total_qty": result.total_qty,
+        "reported_qty": result.reported_qty,
+        "warnings": len(result.warnings),
+        "adapter": result.adapter_version,
+    }
+
+
+_UPSERT_ITEM_DAYS = text(
+    """
+    insert into sales_item_days
+        (outlet_id, report_date, item_name, qty, net_paise, upload_id)
+    select :outlet_id, b.report_date, b.item_name, b.qty, b.net_paise, :upload_id
+      from unnest(
+              cast(:dates as date[]),
+              cast(:names as text[]),
+              cast(:qtys as numeric[]),
+              cast(:nets as bigint[])
+           ) as b(report_date, item_name, qty, net_paise)
+    on conflict (outlet_id, report_date, item_name) do update
+       set qty = excluded.qty,
+           net_paise = excluded.net_paise,
+           upload_id = excluded.upload_id
+    returning (xmax = 0) as inserted
+    """
+)
+
+
+async def _write_item_days(
+    db: AsyncSession,
+    outlet_id: uuid.UUID,
+    upload_id: uuid.UUID,
+    result: "petpooja_itemdays.ItemDaysResult",
+) -> dict[str, int]:
+    inserted = updated = 0
+    rows = result.rows
+    for offset in range(0, len(rows), WRITE_CHUNK):
+        chunk = rows[offset : offset + WRITE_CHUNK]
+        flags = (
+            (
+                await db.execute(
+                    _UPSERT_ITEM_DAYS,
+                    {
+                        "outlet_id": outlet_id,
+                        "upload_id": upload_id,
+                        "dates": [r.report_date for r in chunk],
+                        "names": [r.item_name for r in chunk],
+                        "qtys": [r.qty for r in chunk],
+                        "nets": [r.net_paise for r in chunk],
+                    },
+                )
+            )
+            .scalars()
+            .all()
+        )
+        inserted += sum(1 for was_new in flags if was_new)
+        updated += sum(1 for was_new in flags if not was_new)
+    return {"inserted": inserted, "updated": updated}
 
 
 async def background_parse(upload_id: uuid.UUID, outlet_id: uuid.UUID) -> None:

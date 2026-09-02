@@ -948,6 +948,66 @@ it feeds the manager's eye, which is where trust gets built anyway.
 
 ---
 
+## D24 — Recipes, true units, and theoretical consumption (P17)
+
+**Decision.** Three connected pieces, in dependency order:
+
+**1. The quantity source is the Item Report: Day Wise** — a third adapter,
+`petpooja.itemdays.v1`, behind the same header-detected upload button. It
+is the ONE Petpooja export with true units per menu item per day (the
+Order Listing has names without quantities, D21; the Item Wise report has
+quantities without days). Rows land in `sales_item_days` upserted on
+(outlet, report_date, item_name). **`report_date` is Petpooja's own day
+grouping, stored verbatim** — this export has no timestamps, so the 05:00
+business-date rule cannot be applied to it. At a consumption window's
+edges the two groupings can disagree by one late-night day; known and
+bounded, and windows span days so the error does not compound.
+
+**2. Recipes are brand-level config**, like the catalogue (D10): one menu
+across outlets. The key is the menu item name AS PETPOOJA PRINTS IT — that
+string joins to both sales tables. The unmapped worklist (sold names
+without recipes, ordered by units sold) is the honesty gap made visible:
+theoretical consumption counts only mapped dishes. Lines are replaced
+wholesale on save; a corrected recipe must also REMOVE the ingredient it
+no longer uses. Reads for management, writes for admin, audit on every
+save and delete.
+
+**3. Theoretical consumption is a third independent claim per window**,
+beside the count delta and the requisition stand-in:
+
+    theoretical = sum over window days of (units sold x recipe qty per unit)
+
+NULL — not zero — when it cannot honestly be computed: no item-day sales
+cover the window, or no active recipe mentions the item. That distinction
+carries the whole feature: "no data" read as "zero sales" would flag every
+unmapped ingredient as staff meals.
+
+**What this armed:**
+
+- **The fourth day-one anomaly** (spec section 6): apparent consumption
+  against a COMPUTED zero theoretical — stock left the shelf while no dish
+  whose recipe includes it sold. Fires on the latest window only, lands on
+  the exception board deduplicated like the other three.
+- **The inventory pillar's variance component**: median absolute
+  |apparent − theoretical| / theoretical across the period's computable
+  windows, target ≤ 20% (the spec's own threshold). The P15 weights were
+  re-cut (0.4 requisition / 0.3 stockouts / 0.3 variance) BEFORE the
+  pillar ever produced a live number, so no history moved — the same test
+  D22 applied to phone capture, passed this time.
+- **The forecast's future feed**: forecast covers x recipe quantities is
+  the requisition suggestion D23 promised. Not wired yet — it needs the
+  covers forecast to firm up first.
+
+**Live caveat at build time:** no Akira Item Day Wise export exists yet
+(the shape was established from an older export of another restaurant),
+so the live tables sit empty until one is uploaded — every dependent
+surface reads "pending" with its reason, which is the designed cold state.
+There is also no restaurant-name guard on upload: a file from the wrong
+restaurant would ingest silently. Recorded in OPEN_ITEMS with the alias
+problem it shares.
+
+---
+
 ## Assumptions in force — challenge these if wrong
 
 - **A1 — `ops_manager` approves outlet-manager submissions.** Spec open question

@@ -27,8 +27,10 @@ def inv_targets(**overrides: float) -> InventoryTargets:
     base: dict[str, float] = {
         "clean_req_share": 0.9,
         "max_stockouts_28d": 2,
-        "w_requisition": 0.6,
-        "w_stockouts": 0.4,
+        "max_variance": 0.2,
+        "w_requisition": 0.4,
+        "w_stockouts": 0.3,
+        "w_variance": 0.3,
         "green": GREEN,
         "amber": AMBER,
     }

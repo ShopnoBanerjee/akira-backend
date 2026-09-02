@@ -13,6 +13,10 @@ version that cannot lie:
   consumption-per-cover against that item's own trailing distribution.
   |z| > 2.5 flags; fewer than MIN_WINDOWS samples flags nothing, because a
   z-score against four points is a coin toss wearing a Greek letter.
+- **consumption with zero sales** (P17): the latest window used stock while
+  the recipes say its dishes sold nothing. Staff meals or wastage nobody
+  logged. Fires only when theoretical consumption is COMPUTABLE for the
+  window — no sales data is never treated as zero sales.
 
 Every result carries its inputs. An anomaly a manager cannot check is one
 they learn to ignore — the same argument as the integrity chips.
@@ -193,6 +197,38 @@ def consumption_jump(
                 "usage per cover moved sharply against this item's own "
                 "history — theft, over-portioning, or a menu change nobody "
                 "recorded"
+            ),
+        },
+    )
+
+
+def zero_sales_consumption(
+    *,
+    item_name: str,
+    apparent: float | None,
+    theoretical: float | None,
+) -> Anomaly | None:
+    """Stock left the shelf while the recipes say nothing that uses it sold.
+
+    `theoretical is None` means it could not be computed — no item-day sales
+    covering the window, or no recipe mentions the item — and that is a data
+    gap, not an anomaly. Only a computed zero against a real drawdown flags.
+    """
+    if theoretical is None or apparent is None:
+        return None
+    if theoretical > 0 or apparent <= 0:
+        return None
+    return Anomaly(
+        kind="zero_sales_consumption",
+        severity="medium",
+        title=f"Used with no matching sales: {item_name}",
+        detail={
+            "apparent_consumption": apparent,
+            "theoretical": 0,
+            "reading": (
+                "the counts say this item was used, but no dish whose recipe "
+                "includes it sold in the window — staff meals or wastage "
+                "nobody logged"
             ),
         },
     )

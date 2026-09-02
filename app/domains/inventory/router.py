@@ -493,3 +493,146 @@ async def _get_item(db: AsyncSession, user: CurrentUserDep, item_id: uuid.UUID) 
     visible = None if user.is_global else sorted(user.outlet_ids)
     levels = await _levels_for(db, [item_id], visible)
     return Item(**row, levels=levels.get(item_id, []))
+
+
+# ---------------------------------------------------------------------------
+# Recipes (P17) — what one sold dish uses from the catalogue
+# ---------------------------------------------------------------------------
+
+
+class RecipeLineIn(BaseModel):
+    item_id: uuid.UUID
+    qty_per_unit: float = Field(gt=0)
+
+
+class RecipeSave(BaseModel):
+    lines: list[RecipeLineIn] = Field(min_length=1)
+    notes: str | None = None
+    is_active: bool = True
+
+
+class RecipeLineOut(BaseModel):
+    item_id: uuid.UUID
+    item_name: str
+    unit: str
+    qty_per_unit: float
+
+
+class Recipe(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    menu_item_name: str
+    is_active: bool
+    notes: str | None
+    lines: list[RecipeLineOut]
+
+
+class UnmappedName(BaseModel):
+    item_name: str
+    #: Units sold where the Item Day Wise report covers the name; null when
+    #: only the Order Listing has seen it (which carries no quantities).
+    units: float | None
+    last_seen: Any
+
+
+@router.get(
+    "/recipes",
+    response_model=list[Recipe],
+    dependencies=[Depends(require_management)],
+    summary="Every recipe, with its ingredient lines",
+)
+async def list_recipes(db: DbDep) -> list[Recipe]:
+    from app.domains.inventory import recipes_service
+
+    rows = await recipes_service.list_recipes(db)
+    return [Recipe(**r) for r in rows]
+
+
+@router.get(
+    "/recipes/unmapped",
+    response_model=list[UnmappedName],
+    dependencies=[Depends(require_management)],
+    summary="Sold menu items with no recipe yet",
+)
+async def unmapped(db: DbDep) -> list[UnmappedName]:
+    """The worklist, ordered by units sold — map the ramen that sells thirty
+    a night before the seasonal special. Theoretical consumption only counts
+    what is mapped, so this list is the honesty gap made visible."""
+    from app.domains.inventory import recipes_service
+
+    rows = await recipes_service.unmapped_names(db)
+    return [UnmappedName(**r) for r in rows]
+
+
+@router.put(
+    "/recipes/{menu_item_name}",
+    dependencies=[Depends(require_admin)],
+    summary="Create or replace one dish's recipe",
+)
+async def save_recipe(
+    menu_item_name: str,
+    payload: RecipeSave,
+    request: Request,
+    db: DbDep,
+    user: CurrentUserDep,
+) -> dict[str, Any]:
+    """Lines are replaced wholesale — a recipe is one fact about one dish.
+    The name must match what Petpooja prints on bills; the unmapped list is
+    where those exact strings come from."""
+    from app.domains.inventory import recipes_service
+
+    result = await recipes_service.save_recipe(
+        db,
+        menu_item_name=menu_item_name.strip(),
+        lines=[line.model_dump() for line in payload.lines],
+        notes=payload.notes,
+        is_active=payload.is_active,
+        created_by=user.profile_id,
+    )
+    await record(
+        db,
+        actor_profile_id=user.profile_id,
+        entity_table="recipes",
+        entity_id=result["id"],
+        action=AuditAction.UPDATE,
+        after={
+            "menu_item_name": menu_item_name,
+            "lines": [
+                {"item_id": str(line.item_id), "qty_per_unit": line.qty_per_unit}
+                for line in payload.lines
+            ],
+        },
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await db.commit()
+    return {**result, "id": str(result["id"])}
+
+
+@router.delete(
+    "/recipes/{recipe_id}",
+    dependencies=[Depends(require_admin)],
+    summary="Remove a recipe",
+)
+async def delete_recipe(
+    recipe_id: uuid.UUID,
+    request: Request,
+    db: DbDep,
+    user: CurrentUserDep,
+) -> dict[str, Any]:
+    from app.domains.inventory import recipes_service
+
+    name = await recipes_service.delete_recipe(db, recipe_id)
+    await record(
+        db,
+        actor_profile_id=user.profile_id,
+        entity_table="recipes",
+        entity_id=recipe_id,
+        action=AuditAction.DELETE,
+        after={"menu_item_name": name},
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await db.commit()
+    return {"id": str(recipe_id), "deleted": True, "menu_item_name": name}

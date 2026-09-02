@@ -11,8 +11,11 @@ and two are not, and the pillar says so out loud rather than padding:
   normalised per 28 days so a 7-day view and a quarter read on one scale.
   The unchanged-count anomaly deliberately exempts zero ("a purchasing
   problem, not a counting one") — this is where that problem lands.
-- **Theoretical vs actual variance** (pending) — needs recipes mapping menu
-  items to inventory quantities, which do not exist yet.
+- **Theoretical vs actual variance** (live since P17, where measurable) —
+  the median absolute gap between what the counts say a window used and
+  what the recipes say its sales should have used. Only windows where both
+  sides are computable participate; none in the period and the component
+  stays pending, not zero.
 - **Wastage % of COGS** (pending) — needs a wastage log, which does not
   exist yet.
 
@@ -48,14 +51,20 @@ class InventoryInputs:
     #: total counted lines they sit among.
     counted_lines: int
     stockout_lines: int
+    #: Windows in the period where both apparent and theoretical consumption
+    #: were computable, and the median absolute variance across them.
+    variance_windows: int = 0
+    median_abs_variance: float | None = None
 
 
 @dataclass(frozen=True)
 class InventoryTargets:
     clean_req_share: float
     max_stockouts_28d: float
+    max_variance: float
     w_requisition: float
     w_stockouts: float
+    w_variance: float
     green: float
     amber: float
 
@@ -111,13 +120,40 @@ def inventory_pillar(inputs: InventoryInputs, targets: InventoryTargets) -> Pill
             pending("stockouts", "Stockout incidents", "no confirmed counts in the period")
         )
 
-    components.append(
-        pending(
-            "theoretical_variance",
-            "Theoretical vs actual variance",
-            "needs recipes mapping menu items to stock quantities",
+    if inputs.variance_windows > 0 and inputs.median_abs_variance is not None:
+        med = inputs.median_abs_variance
+        score = smaller_better(med, targets.max_variance)
+        band = (
+            "green"
+            if med <= targets.max_variance
+            else "amber"
+            if med <= 2 * targets.max_variance
+            else "red"
         )
-    )
+        components.append(
+            Component(
+                key="theoretical_variance",
+                label="Theoretical vs actual variance",
+                value=round(med, 4),
+                display=(
+                    f"±{100 * med:.0f}% median gap over {inputs.variance_windows} window"
+                    f"{'s' if inputs.variance_windows != 1 else ''}"
+                ),
+                target_display=f"keep ≤ {100 * targets.max_variance:.0f}%",
+                score=score,
+                weight=targets.w_variance,
+                contribution=round(score * targets.w_variance, 1),
+                band=band,
+            )
+        )
+    else:
+        components.append(
+            pending(
+                "theoretical_variance",
+                "Theoretical vs actual variance",
+                "no windows where both counted usage and recipe-implied usage were computable",
+            )
+        )
     components.append(pending("wastage", "Wastage % of COGS", "needs a wastage log"))
 
     return weighted(
