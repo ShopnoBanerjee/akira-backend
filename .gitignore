@@ -42,3 +42,7 @@ sales-data/
 local/
 # Force-add a genuinely needed fixture with `git add -f`, and only after
 # checking it carries no customer phone, name or address.
+
+# Real source documents kept on this machine, never in the repo.
+# scripts/eval_extractor.py reads the requisition scan from here.
+local/

@@ -27,6 +27,7 @@ the provider changes — the numbers go in the commit message.
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -36,7 +37,18 @@ from app.domains.inventory.counts_service import _page_images
 from app.integrations import sheet_extraction
 
 GOLDEN = Path("tests/fixtures/golden_page1.json")
-PDF = Path("tests/fixtures/requisition_27aug2026.pdf")
+
+# The scan itself is NOT in the repo. It is a real AKIRA stock sheet carrying
+# staff handwriting and signatures, and these repos are public, so it lives on
+# the machine that needs it. Put it anywhere and point this at it:
+#
+#     set AKIRA_REQUISITION_PDF=C:\path\to\requisition_27aug2026.pdf
+#
+# The default below is inside the gitignored local/ directory, so dropping the
+# file at local/requisition_27aug2026.pdf is enough. The golden set stays in
+# the repo: it is a transcription, not the sheet, and it is what makes the
+# provider choice measured rather than remembered (D17).
+PDF = Path(os.environ.get("AKIRA_REQUISITION_PDF", "local/requisition_27aug2026.pdf"))
 
 
 def normalise_cell(value: str | None) -> str | None:

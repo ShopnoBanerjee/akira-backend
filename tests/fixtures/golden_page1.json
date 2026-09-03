@@ -1,36 +1,444 @@
 {
-  "_comment": "Hand-verified ground truth for page 1 of tests/fixtures/requisition_27aug2026.pdf, read from the full-resolution scan by a person. `accept` lists every transcription a correct extractor may produce for that cell — one entry means the cell is unambiguous; several mean the handwriting genuinely admits more than one faithful reading (compounds, values floating between rows). A null in accept means blank-is-correct. Scoring against this set is what makes extractor choices measured instead of anecdotal.",
+  "_comment": "Hand-verified ground truth for page 1 of the 27 Aug 2026 requisition scan (kept out of this repo — see scripts/eval_extractor.py for where it lives), read from the full-resolution scan by a person. `accept` lists every transcription a correct extractor may produce for that cell — one entry means the cell is unambiguous; several mean the handwriting genuinely admits more than one faithful reading (compounds, values floating between rows). A null in accept means blank-is-correct. Scoring against this set is what makes extractor choices measured instead of anecdotal.",
   "sheet_date": "2026-08-27",
   "rows": [
-    { "sl_no": 1, "item_name": "Cucumber Brunoy Wedge", "closing": { "accept": ["0"] }, "requisition": { "accept": [null] } },
-    { "sl_no": 2, "item_name": "Sweet Corn", "closing": { "accept": ["900", "700"] }, "requisition": { "accept": [null] } },
-    { "sl_no": 3, "item_name": "Celery", "closing": { "accept": ["800"] }, "requisition": { "accept": [null] } },
-    { "sl_no": 4, "item_name": "Carrot", "closing": { "accept": [null] }, "requisition": { "accept": [null] } },
-    { "sl_no": 5, "item_name": "Ginger", "closing": { "accept": ["500"] }, "requisition": { "accept": [null] } },
-    { "sl_no": 6, "item_name": "Potato", "closing": { "accept": ["1.500"] }, "requisition": { "accept": ["3kg"] } },
-    { "sl_no": 7, "item_name": "Cabbage", "closing": { "accept": ["4", "1"] }, "requisition": { "accept": [null] } },
-    { "sl_no": 8, "item_name": "Bokchoy", "closing": { "accept": ["0"] }, "requisition": { "accept": ["1kg", null] } },
-    { "sl_no": 9, "item_name": "Shitake Mushroom", "closing": { "accept": ["1kg"] }, "requisition": { "accept": [null] } },
-    { "sl_no": 10, "item_name": "Button Mushroom", "closing": { "accept": ["1kg 7pc", "1kg 4pc", "7pc", "4pc"] }, "requisition": { "accept": [null] } },
-    { "sl_no": 11, "item_name": "Tomato", "closing": { "accept": ["500"] }, "requisition": { "accept": [null] } },
-    { "sl_no": 12, "item_name": "Peeled Garlic", "closing": { "accept": ["1kg"] }, "requisition": { "accept": ["3kg", null] } },
-    { "sl_no": 13, "item_name": "Spring Onion", "closing": { "accept": ["1kg"] }, "requisition": { "accept": ["3kg", "1kg", null] } },
-    { "sl_no": 14, "item_name": "Onion", "closing": { "accept": ["1kg"] }, "requisition": { "accept": ["3kg", null] } },
-    { "sl_no": 15, "item_name": "Pickle Ginger", "closing": { "accept": ["1pc", "1pe"] }, "requisition": { "accept": [null] } },
-    { "sl_no": 16, "item_name": "Begun", "closing": { "accept": [null] }, "requisition": { "accept": [null] } },
-    { "sl_no": 17, "item_name": "Karela", "closing": { "accept": [null] }, "requisition": { "accept": [null] } },
-    { "sl_no": 18, "item_name": "Cucumber", "closing": { "accept": ["1kg", null] }, "requisition": { "accept": [null] } },
-    { "sl_no": 19, "item_name": "Ladies Finger", "closing": { "accept": ["1kg", null] }, "requisition": { "accept": ["1kg", null] } },
-    { "sl_no": 20, "item_name": "Lau", "closing": { "accept": [null] }, "requisition": { "accept": [null] } },
-    { "sl_no": 21, "item_name": "Jhingey", "closing": { "accept": [null] }, "requisition": { "accept": [null] } },
-    { "sl_no": 22, "item_name": "Potol", "closing": { "accept": [null] }, "requisition": { "accept": [null] } },
-    { "sl_no": 23, "item_name": "Cauliflower", "closing": { "accept": [null] }, "requisition": { "accept": [null] } },
-    { "sl_no": 24, "item_name": "Sugar", "closing": { "accept": ["2.800"] }, "requisition": { "accept": [null] } },
-    { "sl_no": 25, "item_name": "Chilli Powder", "closing": { "accept": ["5pk", "5PK"] }, "requisition": { "accept": [null] } },
-    { "sl_no": 26, "item_name": "Black Pepper", "closing": { "accept": ["100", "5pk 100"] }, "requisition": { "accept": [null] } },
-    { "sl_no": 27, "item_name": "Chilli Flakes", "closing": { "accept": ["150 100", "150", "150,100"] }, "requisition": { "accept": [null] } },
-    { "sl_no": 28, "item_name": "Kashmiri Dry Chilli", "closing": { "accept": [null] }, "requisition": { "accept": [null] } },
-    { "sl_no": 29, "item_name": "Dry Chilli", "closing": { "accept": ["700"] }, "requisition": { "accept": [null] } },
-    { "sl_no": 30, "item_name": "Green Chilli", "closing": { "accept": ["400"] }, "requisition": { "accept": [null] } }
+    {
+      "sl_no": 1,
+      "item_name": "Cucumber Brunoy Wedge",
+      "closing": {
+        "accept": [
+          "0"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 2,
+      "item_name": "Sweet Corn",
+      "closing": {
+        "accept": [
+          "900",
+          "700"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 3,
+      "item_name": "Celery",
+      "closing": {
+        "accept": [
+          "800"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 4,
+      "item_name": "Carrot",
+      "closing": {
+        "accept": [
+          null
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 5,
+      "item_name": "Ginger",
+      "closing": {
+        "accept": [
+          "500"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 6,
+      "item_name": "Potato",
+      "closing": {
+        "accept": [
+          "1.500"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          "3kg"
+        ]
+      }
+    },
+    {
+      "sl_no": 7,
+      "item_name": "Cabbage",
+      "closing": {
+        "accept": [
+          "4",
+          "1"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 8,
+      "item_name": "Bokchoy",
+      "closing": {
+        "accept": [
+          "0"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          "1kg",
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 9,
+      "item_name": "Shitake Mushroom",
+      "closing": {
+        "accept": [
+          "1kg"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 10,
+      "item_name": "Button Mushroom",
+      "closing": {
+        "accept": [
+          "1kg 7pc",
+          "1kg 4pc",
+          "7pc",
+          "4pc"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 11,
+      "item_name": "Tomato",
+      "closing": {
+        "accept": [
+          "500"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 12,
+      "item_name": "Peeled Garlic",
+      "closing": {
+        "accept": [
+          "1kg"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          "3kg",
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 13,
+      "item_name": "Spring Onion",
+      "closing": {
+        "accept": [
+          "1kg"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          "3kg",
+          "1kg",
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 14,
+      "item_name": "Onion",
+      "closing": {
+        "accept": [
+          "1kg"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          "3kg",
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 15,
+      "item_name": "Pickle Ginger",
+      "closing": {
+        "accept": [
+          "1pc",
+          "1pe"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 16,
+      "item_name": "Begun",
+      "closing": {
+        "accept": [
+          null
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 17,
+      "item_name": "Karela",
+      "closing": {
+        "accept": [
+          null
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 18,
+      "item_name": "Cucumber",
+      "closing": {
+        "accept": [
+          "1kg",
+          null
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 19,
+      "item_name": "Ladies Finger",
+      "closing": {
+        "accept": [
+          "1kg",
+          null
+        ]
+      },
+      "requisition": {
+        "accept": [
+          "1kg",
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 20,
+      "item_name": "Lau",
+      "closing": {
+        "accept": [
+          null
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 21,
+      "item_name": "Jhingey",
+      "closing": {
+        "accept": [
+          null
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 22,
+      "item_name": "Potol",
+      "closing": {
+        "accept": [
+          null
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 23,
+      "item_name": "Cauliflower",
+      "closing": {
+        "accept": [
+          null
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 24,
+      "item_name": "Sugar",
+      "closing": {
+        "accept": [
+          "2.800"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 25,
+      "item_name": "Chilli Powder",
+      "closing": {
+        "accept": [
+          "5pk",
+          "5PK"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 26,
+      "item_name": "Black Pepper",
+      "closing": {
+        "accept": [
+          "100",
+          "5pk 100"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 27,
+      "item_name": "Chilli Flakes",
+      "closing": {
+        "accept": [
+          "150 100",
+          "150",
+          "150,100"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 28,
+      "item_name": "Kashmiri Dry Chilli",
+      "closing": {
+        "accept": [
+          null
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 29,
+      "item_name": "Dry Chilli",
+      "closing": {
+        "accept": [
+          "700"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    },
+    {
+      "sl_no": 30,
+      "item_name": "Green Chilli",
+      "closing": {
+        "accept": [
+          "400"
+        ]
+      },
+      "requisition": {
+        "accept": [
+          null
+        ]
+      }
+    }
   ]
 }

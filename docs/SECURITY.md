@@ -49,13 +49,18 @@ publishable key leaks or a future feature reads Supabase directly.
 
 ## Known gaps, deliberately recorded
 
-- **Both GitHub repos are public**, and `tests/fixtures/requisition_27aug2026.pdf`
-  — a real AKIRA stock sheet, with handwriting and signatures — is in the pushed
-  history along with its transcription. No sales, customer or credential data is
-  in either repo, and `.gitignore` now refuses `*.xlsx`/`*.xls`/`*.csv` and the
-  usual data directories so an export cannot be swept in by `git add -A`. The
-  fixture itself is the owner's call: removing it means rewriting pushed history,
-  and it is what the whole extraction suite scores against.
+- **Both GitHub repos are public.** No sales, customer or credential data is in
+  either. `.gitignore` refuses `*.xlsx`/`*.xls`/`*.csv`, the usual data
+  directories, and `local/`, so an export or a source document cannot be swept
+  in by `git add -A`. The one real scan that had been committed —
+  `requisition_27aug2026.pdf`, an AKIRA stock sheet with staff handwriting and
+  signatures — was removed from the working tree and purged from the pushed
+  history on 3 Sep 2026. **It was publicly fetchable between 27 Aug and 3 Sep,
+  so treat its contents as disclosed**; a history rewrite removes the copy, not
+  the week. The scoring transcription (`golden_page1.json`) stays: it carries
+  item names and counts, no handwriting and no signature, and it is what keeps
+  the D17 provider choice measurable.
+
 - **Nobody has been told their photographs go to a third-party vendor.** Row 18
   covers what leaves; this covers who knows. If staff photographs are ever used
   for anything but the advisory review, that becomes a consent question rather
