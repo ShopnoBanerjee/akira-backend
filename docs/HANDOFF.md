@@ -5,7 +5,12 @@ Claude Code session picking the project up cold. It tells you what exists, why
 it was built the way it was, how to run it, what will bite you, and what to do
 next.
 
-Last updated: end of P7, 27 Aug 2026. Both repos clean.
+Last updated: end of P17, 3 Sep 2026. Both repos clean and pushed.
+
+> The single most reliable thing in this file is that it will fall behind.
+> Run `git log --oneline | head` in both repos before trusting any epic
+> number below — that is the source of truth, and this header has been
+> wrong by ten epics before.
 
 ---
 
@@ -20,8 +25,8 @@ restaurant group in Kolkata. Stage 1 delivers three things:
 3. **Sales ingestion skeleton** — not built yet (P9).
 
 The governing specification is `docs/STAGE1_SPEC.md` (present in both repos).
-It is the contract. Where this build deviates from it — and it does, in fifteen
-places — every deviation is recorded in `docs/DECISIONS.md` as D1–D15 with its
+It is the contract. Where this build deviates from it — and it does, in twenty-four
+places — every deviation is recorded in `docs/DECISIONS.md` as D1–D24 with its
 reasoning. **Read DECISIONS.md before proposing any change**; several
 "obvious improvements" are things that were deliberately decided against.
 
@@ -37,8 +42,8 @@ Two **separate** git repositories, not a monorepo (D1).
 
 | | |
 |---|---|
-| `C:\Users\KIIT\Desktop\akira-app\akira-backend` | FastAPI · Python 3.12 · uv · port **8000** |
-| `C:\Users\KIIT\Desktop\akira-app\akira-frontend` | Vite 6 · React 19 · TS strict · port **5173** |
+| `C:\Users\KIIT\Desktop\akira\akira-app\akira-backend` | FastAPI · Python 3.12 · uv · port **8000** |
+| `C:\Users\KIIT\Desktop\akira\akira-app\akira-frontend` | Vite 6 · React 19 · TS strict · port **5173** |
 
 Remotes: `github.com/ShopnoBanerjee/akira-backend` and `.../akira-frontend`.
 
@@ -64,7 +69,7 @@ app/integrations/ storage.py (Supabase Storage), supabase_auth.py (Auth Admin),
                  vision.py (the advisory photo review's model call)
 app/jobs/        runner.py (job_runs bracketing), scheduler.py (APScheduler),
                  tasks.py (the three jobs), digest.py, notify.py
-supabase/migrations/  0001–0013, append-only, source of truth for schema
+supabase/migrations/  0001–0019, append-only, source of truth for schema
 supabase/seed/        001_outlets_and_sop.sql, 002_inventory_catalogue.sql
 supabase/local/       0000_local_auth_shim.sql — TEST ONLY, never on Supabase
 scripts/         export_openapi.py, seed_users.py,
@@ -123,7 +128,7 @@ goes through FastAPI, which holds the service role.
 
 ---
 
-## 4. The fifteen decisions (D1–D15)
+## 4. The decisions (D1–D24)
 
 Full text in `docs/DECISIONS.md`. Summary, because each one will look like a
 mistake until you know why:
@@ -267,10 +272,17 @@ this workflow. Read the file, run it inside a transaction with asyncpg using
 
 ---
 
-## 7. What is built (P0–P10)
+## 7. What is built (P0–P17)
 
-**78 API operations across 62 paths. 391 backend tests, 68 frontend tests.
-25 tables, 14 migrations. All live on Supabase, and CI is green.**
+**98 API operations across 80 paths. 36 tables, 19 migrations. All live on
+Supabase, and CI is green.** Test counts move every epic — run the suites
+rather than quoting this line.
+
+Stage 1 is P0–P10. Stage 2 so far is P11 (stock-count extraction), P12 (sales
+pillar + narrated digest), P13 (consumption windows + anomalies), P14 (the
+Order Listing adapter), P15 (all four pillars + the blended score), P16 (the
+forecasting baseline), P17 (recipes + theoretical consumption). Each has its
+own decision entry; read `docs/DECISIONS.md` D16–D24 for Stage 2.
 
 - **P0** Scaffold both repos, CI, tooling.
 - **P1** Schema (12 migrations), RLS, indexes, seed: 2 outlets, 6 categories,
@@ -518,63 +530,33 @@ thinking, the model IDs — is not what a training prior will tell you.
 
 ---
 
-## 10. NEXT: Stage 2 (P11 underway)
+## 10. NEXT: not yet chosen
 
-**P11 — the stock count engine — is live.** Migration 0015, the extraction
-pipeline (sheet_extraction.py, provider-dispatched like vision.py), the
-never-guess parser and calibrated mapper (D17), review/confirm/requisition
-APIs, and the frontend screens (/app/inventory/counts). Verified against the
-real 8-page requisition PDF: 147 lines, 146 exact-mapped, kitchen conventions
-parsed, refusals attached, one line resolved through the UI and traced in the
-database. Extraction and photo review both run on Gemini
-(gemini-3-flash-preview, free tier) — chosen by golden-set measurement, D18:
-100% cell accuracy and zero row-shifts against Groq's 83% with six. On the
-real sheet the review load fell from 147/147 lines to 41, and nearly all 41
-are the parser refusing genuine kitchen ambiguity ("1pk" written on gram
-items) — questions only a human can answer, once, after which aliases and
-par config make them stop recurring.
+P11–P17 are done (section 7). There is no P18 brief because the next epic has
+not been picked, and picking it is the owner's call — several Stage 2 threads
+are blocked on something only they can supply.
 
-Stage 1 is code-complete as of P10. What remains before real use is not code:
-rotate the Groq key, set SMTP, capture reference standards outlet by outlet,
-and replace the test PINs — all tracked with unblockers in
-`docs/OPEN_ITEMS.md`, with the security posture in `docs/SECURITY.md` and the
-operational manual in `docs/RUNBOOK.md`.
+**Read `docs/OPEN_ITEMS.md` first.** It is the maintained list of deliberate
+gaps and says what unblocks each. As of P17 the live blockers are:
 
-### The road
+- **An Akira "Item Report: Day Wise" export.** P17's third adapter
+  (`petpooja.itemdays.v1`) was built against another restaurant's old file
+  because no AKIRA one exists yet. The recipe and theoretical-consumption
+  tables stay empty until one is uploaded, so the variance component has
+  nothing real behind it.
+- **Reference standards are barely captured.** The AI photo review (D6/D13)
+  compares against per-outlet reference shots that mostly have not been taken.
+  Someone has to walk New Town with the tablet.
+- **No `ANTHROPIC_API_KEY`.** The vision path runs on Groq and extraction on
+  Gemini (D18); `client.messages.parse` has still never executed.
+- **The digest does not send mail.** No SMTP host, so it degrades to logging
+  and records `smtp_not_configured`. Deliberate until there is a mailbox.
 
-- **Stage 2** starts with the inventory/requisition engine. A real requisition
-  PDF is already supplied for testing the AI extraction:
-  `tests/fixtures/requisition_27aug2026.pdf`. The rule that carries over: **the
-  LLM parses and explains; deterministic code decides.**
-
-### What P8 shipped, and the traps in it
-
-`GET /dashboard/outlets` — one SOP score per visible outlet, ordered by code.
-`GET /dashboard/outlet-health?outlet_id=&days=&to=` — the card: score, band,
-the three weighted components with their contributions, the penalties with
-their evidence, the worst component named, the counts, and a per-day trend.
-
-Four things that will look wrong until you know why (all D14):
-
-1. **A component with no denominator contributes 0** and is not re-weighted
-   out. An outlet that approved nothing has earned no run-score credit.
-2. **Nothing scheduled means `score: null`, not 0.** A closed outlet has not
-   failed; it has not been measured.
-3. **The critical-failure cap holds the BAND at amber and leaves the number
-   alone.** A 94 showing amber with "cannot be green with 1 unresolved
-   critical failure" is the intended reading.
-4. **The integrity penalty is a rate** — `10 x flags / scheduled` — so a busier
-   outlet is not punished harder for the same standard of honesty.
-
-**Weights are resolved at the end of the period being scored**, never "now"
-(D9). If a dashboard number for a past month ever moves after somebody edits a
-weight, that resolution has been bypassed.
-
-**The dashboard and the digest must agree.** They share
-`app/domains/sop/metrics.py::outlet_counts` for exactly that reason. If you add
-a metric, add it there rather than beside it.
-
----
+Candidate work that is NOT blocked, if the owner wants to keep moving:
+labour scheduling off the forecast (spec section 5.1 names it as the second
+consumer of forecast covers), the WhatsApp notifier (the `Notifier` interface
+is already pluggable and staff live on WhatsApp), or a second pass on
+hardening now that the surface is three times what P10 reviewed.
 
 
 ## 11. Working relationship

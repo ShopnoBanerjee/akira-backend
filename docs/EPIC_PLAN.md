@@ -6,21 +6,44 @@ E0–E9 assumed a monorepo and a smaller admin surface; both changed. See
 
 ## Status
 
-| Epic | Scope | State |
+**Everything P0–P17 is done, live on Supabase, pushed, and CI is green.**
+Verify with `git log --oneline | head` rather than trusting this table — it
+sat claiming "P2 next" until P17 had already shipped.
+
+### Stage 1 — complete
+
+| Epic | Scope |
+|---|---|
+| **P0** | Repo scaffold, tooling, CI — both repos |
+| **P1** | Schema, RLS, indexes, seed, migration tests |
+| **P2** | Auth: JWT verification, roles, shared-tablet PIN, protected routing |
+| **P3a** | Admin — organisation: outlets, users, roles, devices |
+| **P3b** | Admin — configuration: inventory catalogue, settings, job runs |
+| **P4** | SOP template builder, versioning, assignments |
+| **P5** | Checklist runner (mobile, offline-tolerant) |
+| **P6** | Manager review and approval queue |
+| **P7** | Integrity engine, AI photo review, scheduled jobs |
+| **P8** | Compliance dashboard |
+| **P9** | Sales ingestion skeleton |
+| **P10** | Hardening pass |
+
+### Stage 2 — in progress
+
+| Epic | Scope | Decision |
 |---|---|---|
-| **P0** | Repo scaffold, tooling, CI — both repos | ✅ done |
-| **P1** | Schema, RLS, indexes, seed, migration tests | 🔨 all but user seeding |
-| **P2** | Auth: JWT verification, roles, shared-tablet PIN, protected routing | next |
-| **P3a** | Admin — organisation: outlets, users, roles, devices | |
-| **P3b** | Admin — configuration: inventory catalogue, settings, job runs | |
-| **P11** | Stage 2 opens: stock count extraction, review, requisitions (D17) | |
-| **P4** | SOP template builder, versioning, assignments | |
-| **P5** | Checklist runner (mobile, offline-tolerant) | |
-| **P6** | Manager review and approval queue | |
-| **P7** | Integrity engine, AI photo review, scheduled jobs | |
-| **P8** | Compliance dashboard | |
-| **P9** | Sales ingestion skeleton | |
-| **P10** | Hardening pass | |
+| **P11** | Stock count extraction, review, requisitions | D16–D18 |
+| **P12** | Sales pillar + narrated digest | D19 |
+| **P13** | Consumption windows + section-6 anomalies | D20 |
+| **P14** | Order Listing adapter — item names per bill | D21 |
+| **P15** | All four pillars + the blended health score | D22 |
+| **P16** | Forecasting baseline — median × trend × event | D23 |
+| **P17** | Recipes + theoretical consumption | D24 |
+
+### Next
+
+Not yet chosen. `docs/OPEN_ITEMS.md` lists what is blocked and on whom —
+several Stage 2 threads are waiting on an export or a walk of the outlet
+rather than on code. Pick the next epic against that list.
 
 ## P1 remainder: seeding users
 

@@ -23,3 +23,18 @@ htmlcov/
 Thumbs.db
 .idea/
 .vscode/
+
+# Business data — these repos are PUBLIC.
+# Petpooja exports, stock sheets and anything else carrying real sales,
+# customer or supplier detail stays on the machine it was downloaded to.
+# Nothing here is a secret in the credential sense; it is the restaurant's
+# trading data, and a public repo is not where it lives.
+*.xlsx
+*.xls
+*.csv
+data/
+exports/
+uploads/
+sales-data/
+# Force-add a genuinely needed fixture with `git add -f`, and only after
+# checking it carries no customer phone, name or address.
