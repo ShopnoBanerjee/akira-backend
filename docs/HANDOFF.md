@@ -361,6 +361,12 @@ the **database** for ground truth. Instrumentation lies; the database does not.
 I once nearly "fixed" working code because a `fetch` interceptor missed a call
 the database showed had happened.
 
+**If `uv run pytest` says "Failed to canonicalize script path", the venv is
+stale.** The project moved on 3 Sep 2026 and `.venv`'s console scripts still
+held absolute paths to the old location — so `uv run python` worked while
+`uv run pytest` and `uv run ruff` did not, which reads like a pytest problem
+and is not one. `uv sync --all-groups --reinstall` rewrites them.
+
 **When patching a formatted file with a Python string replace, assert the
 anchor matched — and that it matched exactly once.** Prettier and ruff reflow
 lines, so a silent no-op patch cost a long debugging session in P5. Worse, in

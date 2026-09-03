@@ -4,8 +4,13 @@ The P10 review of what protects what, where each control is enforced, and how
 we know it works. "Proven by" names the test or the live verification — a
 control nobody has fired at is listed as such, not counted.
 
-Reviewed: 27 Aug 2026. Re-review when an epic touches auth, storage, or adds a
-table.
+Reviewed: 27 Aug 2026 (P10), re-reviewed 3 Sep 2026 (P18) after P11–P17 added
+11 tables, ~20 operations, two storage buckets and — new in kind — outbound
+calls carrying photographs to third-party model vendors.
+
+Re-review when an epic touches auth, storage, adds a table, or sends data to a
+new external service. That last clause is here because P7 and P11 introduced a
+data-egress path the original review had no row for.
 
 The architecture this defends: the browser holds only the publishable key and
 a user JWT; every write goes through the API, which connects with the service
@@ -35,10 +40,26 @@ publishable key leaks or a future feature reads Supabase directly.
 | 15 | Audit trail | Tampering with history | `audit_log` is insert-only in practice: no update/delete endpoint exists, `authenticated` holds SELECT only, writes join the caller's transaction so they cannot survive a rollback of the thing they describe | `app/core/audit.py`, RLS grants | `test_rls.py` write refusal; `db.py` docstring records the transaction rule |
 | 16 | Secrets | Keys reaching git or the browser | `.env` and `.seed-credentials.md` gitignored; secret scan before every commit (the Supabase, Anthropic and Groq key prefixes, plus Indian mobile-number patterns — spelled out in HANDOFF, not here, so this file never trips the scan itself); the service key exists only server-side; browsers get the publishable key and short-lived signed URLs | working practice | the scan runs in every commit in this repo's history since P7 |
 | 17 | Browser | Cross-origin calls | CORS allowlist from `CORS_ORIGINS`, not `*` | `app/main.py` | config review |
+| 18 | Photographs of kitchens and stock sheets | Business imagery leaving the building to a third-party model vendor | This is a real egress path, not a hypothetical: the photo review posts kitchen photographs and the sheet extractor posts scans of handwritten count sheets. Payloads carry the **image and task text only** — no bill, customer, phone or staff-identity field is ever attached, verified by reading both payload builders. Vendor is switchable per surface (`AI_REVIEW_PROVIDER`, `STOCK_EXTRACT_PROVIDER`) and review is off per outlet by default (`ai_review.enabled`) | `app/integrations/vision.py`, `app/integrations/sheet_extraction.py` | payload builders read this pass — images plus prompt, nothing joined from the database. **Residual, accepted:** a kitchen photo may incidentally show a staff member, and a count sheet carries their handwriting and signature. Nobody has been told their photos go to a US vendor |
+| 19 | `stock-sheets` and `sales-uploads` buckets | A client choosing where its bytes land, or reading another outlet's uploads | Both private, no public read path; the object path is derived server-side from `(outlet_id, sha256, extension)` and the user's filename never becomes the path; outlet access checked before the upload is accepted, not after | `app/domains/inventory/counts_service.py` `sheet_path_for`, `_require_outlet_access`; `app/integrations/storage.py` | read this pass; same shape as the photo path check proven in `test_runs.py` |
+| 20 | The 11 tables added by P11–P17 | A new table shipping without RLS | The catalog audit (#4) is not a per-table list — it walks `pg_class` and fails on any public table lacking forced RLS or a policy, so tables added after this review are covered without editing it | `test_rls.py::TestEveryTableIsLockedDown` | ran 3 Sep 2026 against all 36 tables: 19 passed |
+| 21 | Every route | An endpoint shipping with no authorisation at all | Mechanical audit of all 98 routes: each carries an identity dependency; role guards distribute as 38 `require_management`, 21 `require_admin`, 7 `require_owner`, 7 floor-actor | routers throughout | AST audit run 3 Sep 2026 — **0 routes without a guard**. One flagged endpoint (`GET /outlets/{outlet_id}`) was a false positive: its check lives one layer down in `service.get_one` |
 
 ---
 
 ## Known gaps, deliberately recorded
+
+- **Both GitHub repos are public**, and `tests/fixtures/requisition_27aug2026.pdf`
+  — a real AKIRA stock sheet, with handwriting and signatures — is in the pushed
+  history along with its transcription. No sales, customer or credential data is
+  in either repo, and `.gitignore` now refuses `*.xlsx`/`*.xls`/`*.csv` and the
+  usual data directories so an export cannot be swept in by `git add -A`. The
+  fixture itself is the owner's call: removing it means rewriting pushed history,
+  and it is what the whole extraction suite scores against.
+- **Nobody has been told their photographs go to a third-party vendor.** Row 18
+  covers what leaves; this covers who knows. If staff photographs are ever used
+  for anything but the advisory review, that becomes a consent question rather
+  than a config one.
 
 - **No general API rate limiting.** The PIN flow has its own lockout (#7); the
   rest relies on Supabase Auth's own limits and the small user population of an
