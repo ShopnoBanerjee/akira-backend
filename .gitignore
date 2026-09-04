@@ -36,5 +36,9 @@ data/
 exports/
 uploads/
 sales-data/
+# Where a scan or export is parked when it has to stay on this machine but
+# out of the repo. It holds a real AKIRA stock sheet; nothing in here is ever
+# committed.
+local/
 # Force-add a genuinely needed fixture with `git add -f`, and only after
 # checking it carries no customer phone, name or address.
