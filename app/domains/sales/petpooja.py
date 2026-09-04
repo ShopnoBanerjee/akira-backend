@@ -156,6 +156,42 @@ def to_paise(value: object) -> int:
     return int((Decimal(str(value)) * 100).to_integral_value())
 
 
+#: The preamble label carrying the venue's name, in every export seen. Written
+#: with a trailing colon in the cell — "Restaurant Name:" — which is why the
+#: readers below strip one before comparing.
+RESTAURANT_LABEL = "restaurant name"
+
+
+def normalise_restaurant(name: object) -> str:
+    """A restaurant name reduced to what two spellings of it have in common.
+
+    Petpooja's preamble is whatever somebody typed into the account settings,
+    so "AKIRA Ramen", "Akira  Ramen" and "akira ramen " are the same venue and
+    must compare equal. Case and whitespace are therefore folded away.
+
+    Nothing else is. Punctuation stays, and comparison is on the WHOLE string:
+    matching a prefix would let "Akira" accept "Akira Ramen Bangalore", which
+    is the exact file this guard exists to refuse. An over-eager normaliser
+    here silently widens the guard rather than tripping a test.
+    """
+    return " ".join(str(name or "").split()).casefold()
+
+
+def restaurant_in_preamble(rows: "list[tuple[Any, ...]]") -> str | None:
+    """The "Restaurant Name:" value from an export's preamble, verbatim.
+
+    Takes rows rather than bytes so the caller that has already opened the
+    workbook does not open it a second time. All three reports carry this
+    label above the header row, in column A with the value beside it.
+    """
+    for row in rows:
+        if not row:
+            continue
+        if str(row[0] or "").strip().rstrip(":").lower() == RESTAURANT_LABEL and len(row) > 1:
+            return str(row[1] or "").strip() or None
+    return None
+
+
 def parse_timestamp(value: object) -> datetime:
     """The cell as an outlet-local aware datetime.
 

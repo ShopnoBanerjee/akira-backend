@@ -8,7 +8,8 @@ are deciding what to pick up.
 This is not a bug list. Nothing here is broken; broken things get fixed, not
 filed. It is the set of deliberate gaps, and it should shrink.
 
-Last reviewed: 27 Aug 2026, at the close of P10.
+Last reviewed: 4 Sep 2026, at the close of P18 and the sales-upload
+restaurant guard.
 
 **Keep it honest.** When you close one, delete the entry rather than marking it
 done — the file is only useful if everything in it is still true. When you open
@@ -141,13 +142,46 @@ on top of that would have muddied the signal.
   clutter the outlet pickers. They are soft-deleted and inactive, and every
   query filters them. This was asserted as a problem in an earlier draft of
   HANDOFF.md without being checked; it is not one.
-- **There is no blended outlet health score**, and that is D14, not an
-  omission. Stage 1 measures one of four pillars; a number built from a quarter
-  of the evidence would be worse than none.
+- **The blended health score exists**, and D22 is why. D14 held it back
+  while Stage 1 measured one pillar of four; P15 built the other three, so the
+  blend now runs over whatever is actually measured and renormalises. The
+  inventory pillar stays dark until an outlet has its first confirmed stock
+  count — measured-or-absent, never a zero standing in for no evidence. This
+  file claimed the opposite until 4 Sep 2026; `app/domains/dashboard/health.py`
+  is the answer, not this paragraph.
+- **A restaurant-name guard on sales uploads is not missing.** Every adapter
+  reads the export's `Restaurant Name:` preamble, and it is checked against
+  `sales.petpooja_restaurant_name` before anything is stored or written (D25).
+  Two things about it are deliberate and should not be "fixed":
+  - It is **unarmed until that setting is given a value**, so it could ship
+    without taking sales ingestion down. Arm it by copying the name shown on
+    any upload card into Settings → Sales.
+  - It catches the wrong **restaurant**, never the wrong **outlet**. Both
+    outlets sit under one Petpooja account and print the same name; nothing
+    in the file tells them apart, which is why the uploader picks the outlet
+    by hand.
 
 ---
 
 ## Waiting on people
+
+### The restaurant guard is built but not armed
+
+`sales.petpooja_restaurant_name` is empty, so uploads are accepted from any
+restaurant (D25). Nothing is wrong until somebody uploads the wrong file —
+and the point of the guard is that nothing *looks* wrong then either.
+
+**The value to use is `Akira`** — read off all three real exports already in
+Storage (two Orders Master Reports and one Order Listing), and backfilled onto
+`data_uploads.restaurant_name` so the upload cards show it.
+
+**Unblocked by:** setting Settings → Sales → "Expected Petpooja restaurant
+name" to exactly `Akira`. Left unarmed on purpose rather than switched on
+here, for one reason: no Akira *Item Report: Day Wise* export exists yet, so
+whether Petpooja prints the same account name on that report type is
+unverified. If it prints something else, arming now would refuse the very
+export this project is waiting for. Arm it once one has landed — or arm it
+today and expect to widen it if that upload bounces.
 
 ### An Akira Item Report: Day Wise export (P17)
 
@@ -158,12 +192,3 @@ one arrives, `sales_item_days` is empty and every dependent surface
 (variance component, zero-sales anomaly, true units) reads "pending" with
 its reason. Export it from Petpooja (Reports → Item Report: Day Wise) for
 the same period the master covers and drop it on the Sales page.
-
-### No restaurant-name guard on sales uploads
-
-None of the three adapters refuses a file whose preamble names a different
-restaurant — uploading another venue's export to an Akira outlet would
-ingest silently. The uploader picks the outlet, so the blast radius is one
-person's mistake, but a preamble check against the outlet's configured
-restaurant name would close it. Applies equally to master, listing and
-item-days uploads.

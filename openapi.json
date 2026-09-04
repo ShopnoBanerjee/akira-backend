@@ -9975,6 +9975,17 @@
             ],
             "title": "Parsed Net Paise"
           },
+          "restaurant_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restaurant Name"
+          },
           "uploaded_by_name": {
             "anyOf": [
               {

@@ -29,6 +29,7 @@ path to it. Only the salted digest ever reaches a database column.
 
 import hashlib
 import uuid
+from dataclasses import dataclass
 from datetime import date
 from io import BytesIO
 from typing import Any
@@ -41,6 +42,7 @@ from app.core.config import get_settings
 from app.core.deps import CurrentUser
 from app.core.enums import AuditAction, UploadStatus
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
+from app.core.settings_value import resolve
 from app.domains.sales import petpooja, petpooja_itemdays, petpooja_listing
 from app.integrations import storage
 
@@ -56,14 +58,29 @@ SOURCE_LISTING = "petpooja_listing"
 SOURCE_ITEMDAYS = "petpooja_itemdays"
 
 
-def detect_source(data: bytes) -> str:
-    """Which Petpooja report these bytes are, from the header row.
+@dataclass(frozen=True)
+class ExportPreamble:
+    """What can be learned about a file before committing to parsing it."""
+
+    #: Which of the three reports this is.
+    source: str
+    #: The "Restaurant Name:" line, verbatim, or None if the file has none.
+    restaurant: str | None
+
+
+def inspect_export(data: bytes) -> ExportPreamble:
+    """Which Petpooja report these bytes are, and which venue they claim.
 
     The uploader should not have to know Petpooja's report names — one upload
     button, and the file says what it is. The master's header has "Invoice
     No." and no "Items"; the listing has "Order No." plus "Items". Anything
     else is refused HERE, in the request, so whoever attached the wrong file
     hears about it now rather than finding a failed upload row tomorrow.
+
+    The restaurant name is read in the same pass, and for the same reason. It
+    sits in the preamble, above the header row, so the scan below has already
+    walked past it by the time the report type is known — reading it costs
+    nothing here and would cost a second 25MB workbook load anywhere else.
     """
     from openpyxl import load_workbook
 
@@ -71,25 +88,85 @@ def detect_source(data: bytes) -> str:
         workbook = load_workbook(BytesIO(data), read_only=True, data_only=True)
     except Exception as exc:
         raise ValidationError(f"Not a readable .xlsx file: {exc}") from exc
+    seen: list[tuple[Any, ...]] = []
+    source: str | None = None
     try:
         sheet = workbook[workbook.sheetnames[0]]
         for index, row in enumerate(sheet.iter_rows(values_only=True)):
             if index >= 30:  # headers sit in the first few rows of every export seen
                 break
+            seen.append(tuple(row))
             cells = {str(cell or "").strip() for cell in row}
             if petpooja.HEADER_MARKER in cells:
-                return SOURCE_ORDERS
+                source = SOURCE_ORDERS
+                break
             if all(m in cells for m in petpooja_listing.LISTING_HEADER_MARKERS):
-                return SOURCE_LISTING
+                source = SOURCE_LISTING
+                break
             if all(m in cells for m in petpooja_itemdays.ITEMDAYS_HEADER_MARKERS):
-                return SOURCE_ITEMDAYS
+                source = SOURCE_ITEMDAYS
+                break
     finally:
         workbook.close()
-    raise ValidationError(
-        "This is not a report this system can read. Supported, all from "
-        "Petpooja: the Orders Master Report, the Order Listing report, and "
-        "the Item Report: Day Wise."
-    )
+    if source is None:
+        raise ValidationError(
+            "This is not a report this system can read. Supported, all from "
+            "Petpooja: the Orders Master Report, the Order Listing report, and "
+            "the Item Report: Day Wise."
+        )
+    return ExportPreamble(source=source, restaurant=petpooja.restaurant_in_preamble(seen))
+
+
+def detect_source(data: bytes) -> str:
+    """Which Petpooja report these bytes are. See `inspect_export`."""
+    return inspect_export(data).source
+
+
+async def check_restaurant(
+    db: AsyncSession,
+    *,
+    outlet_id: uuid.UUID,
+    found: str | None,
+) -> None:
+    """Refuse a file that names a restaurant this outlet does not expect.
+
+    The threat is narrow and worth stating exactly, because a guard people
+    misread is worse than none:
+
+    - It CATCHES another venue's export — a second restaurant in the same
+      Petpooja account, a file forwarded by the wrong person, an accountant's
+      spreadsheet for somewhere else. That file would otherwise ingest
+      silently and look, afterwards, like a slow month.
+    - It CANNOT catch New Town's export filed against the other outlet. Both
+      outlets sit under one Petpooja account and print the same name, which
+      is the same reason the uploader has to pick the outlet by hand in the
+      first place. Nothing in the file distinguishes them.
+
+    Unarmed by default. An empty setting means every existing installation
+    keeps working and nobody is locked out of uploading on the day this ships;
+    the observed name is recorded regardless, which is what makes arming it a
+    copy-paste rather than a guess.
+    """
+    expected = str(await resolve(db, "sales.petpooja_restaurant_name", outlet_id=outlet_id) or "")
+    if not expected.strip():
+        return
+    if petpooja.normalise_restaurant(found) == petpooja.normalise_restaurant(expected):
+        return
+    wanted = expected.strip()
+    if found:
+        message = (
+            f"This export is for {found!r}, but this outlet expects {wanted!r}. "
+            "Nothing was ingested. If that is the same restaurant written "
+            "differently, correct the 'Expected Petpooja restaurant name' "
+            "setting; otherwise this is another venue's file."
+        )
+    else:
+        message = (
+            "This export carries no 'Restaurant Name:' line, so it cannot be "
+            f"checked against the {wanted!r} this outlet expects. Nothing was "
+            "ingested."
+        )
+    raise ValidationError(message, extra={"found": found, "expected": wanted})
 
 
 def phone_hasher() -> "Any":
@@ -140,7 +217,12 @@ async def create_upload(
         )
 
     file_sha256 = hashlib.sha256(data).hexdigest()
-    source = detect_source(data)
+    preamble = inspect_export(data)
+    source = preamble.source
+    # Before the bytes reach Storage and before a row exists: a refused file
+    # should leave no trace to clean up, and the person holding the wrong
+    # spreadsheet should hear about it while they still remember sending it.
+    await check_restaurant(db, outlet_id=outlet_id, found=preamble.restaurant)
 
     # Idempotency. Somebody will re-send the same export, because nothing about
     # a spreadsheet says whether it has been sent before.
@@ -186,9 +268,9 @@ async def create_upload(
                 """
                 insert into data_uploads
                     (outlet_id, uploaded_by, source, original_filename,
-                     storage_path, file_sha256, status)
+                     storage_path, file_sha256, status, restaurant_name)
                 values (:outlet_id, :uploaded_by, :source, :filename,
-                        :path, :sha, 'received')
+                        :path, :sha, 'received', :restaurant)
                 returning id
                 """
             ),
@@ -199,6 +281,7 @@ async def create_upload(
                 "filename": filename[:250],
                 "path": path,
                 "sha": file_sha256,
+                "restaurant": preamble.restaurant,
             },
         )
     ).scalar_one()
@@ -210,7 +293,12 @@ async def create_upload(
         entity_table="data_uploads",
         entity_id=upload_id,
         action=AuditAction.CREATE,
-        after={"filename": filename, "bytes": len(data), "sha256": file_sha256},
+        after={
+            "filename": filename,
+            "bytes": len(data),
+            "sha256": file_sha256,
+            "restaurant_name": preamble.restaurant,
+        },
         **audit_ctx,
     )
     await db.commit()
@@ -248,8 +336,12 @@ async def parse_upload(db: AsyncSession, upload_id: uuid.UUID) -> dict[str, Any]
     if upload is None:
         raise NotFoundError("That upload does not exist.")
 
+    # error_detail is cleared with the same statement. Leaving the previous
+    # failure's message beside status='parsing' makes a re-parse in flight
+    # read as a fresh failure, which is the row lying about itself.
     await db.execute(
-        text("update data_uploads set status = 'parsing' where id = :id"), {"id": upload_id}
+        text("update data_uploads set status = 'parsing', error_detail = null where id = :id"),
+        {"id": upload_id},
     )
     await db.commit()
 
@@ -262,6 +354,11 @@ async def parse_upload(db: AsyncSession, upload_id: uuid.UUID) -> dict[str, Any]
         if upload["source"] == SOURCE_ITEMDAYS:
             return await _parse_itemdays(db, upload, data)
         result = petpooja.parse_orders(data, hash_phone=phone_hasher())
+        # A second time, at the last point before anything is written. The
+        # request-time check cannot cover a re-parse: the file was accepted
+        # under whatever the setting said then, and re-reading it today must
+        # obey what it says today.
+        await check_restaurant(db, outlet_id=upload["outlet_id"], found=result.restaurant)
     except Exception as exc:
         await db.rollback()
         await db.execute(
@@ -290,6 +387,7 @@ async def parse_upload(db: AsyncSession, upload_id: uuid.UUID) -> dict[str, Any]
                    adapter_version = :adapter,
                    parsed_net_paise = :net,
                    reported_net_paise = :reported,
+                   restaurant_name = :restaurant,
                    parsed_at = now(),
                    error_detail = null
              where id = :id
@@ -304,6 +402,7 @@ async def parse_upload(db: AsyncSession, upload_id: uuid.UUID) -> dict[str, Any]
             "adapter": result.adapter_version,
             "reported": result.reported_net_paise,
             "net": result.net_paise,
+            "restaurant": result.restaurant,
         },
     )
     await db.commit()
@@ -428,6 +527,7 @@ async def _parse_listing(db: AsyncSession, upload: Any, data: bytes) -> dict[str
     of maybe, and both would look like data.
     """
     result = petpooja_listing.parse_listing(data)
+    await check_restaurant(db, outlet_id=upload["outlet_id"], found=result.restaurant)
     written = await _write_items(db, upload["outlet_id"], upload["id"], result)
 
     import json
@@ -458,6 +558,7 @@ async def _parse_listing(db: AsyncSession, upload: Any, data: bytes) -> dict[str
                    warnings = cast(:warnings as jsonb),
                    adapter_version = :adapter,
                    parsed_net_paise = :net,
+                   restaurant_name = :restaurant,
                    parsed_at = now(),
                    error_detail = null
              where id = :id
@@ -470,6 +571,7 @@ async def _parse_listing(db: AsyncSession, upload: Any, data: bytes) -> dict[str
             "end": period_end,
             "warnings": json.dumps(warnings, default=str),
             "adapter": result.adapter_version,
+            "restaurant": result.restaurant,
             # The sum of My Amount across parsed orders. Verified against the
             # real exports: this is the master's GROSS for the same bills
             # (net + discounts), kept so the uploads list shows the two
@@ -584,6 +686,7 @@ async def _parse_itemdays(db: AsyncSession, upload: Any, data: bytes) -> dict[st
     (via parsed figures in the result), so a disagreement is visible.
     """
     result = petpooja_itemdays.parse_itemdays(data)
+    await check_restaurant(db, outlet_id=upload["outlet_id"], found=result.restaurant)
     written = await _write_item_days(db, upload["outlet_id"], upload["id"], result)
 
     import json
@@ -599,6 +702,7 @@ async def _parse_itemdays(db: AsyncSession, upload: Any, data: bytes) -> dict[st
                    warnings = cast(:warnings as jsonb),
                    adapter_version = :adapter,
                    parsed_net_paise = :net,
+                   restaurant_name = :restaurant,
                    parsed_at = now(),
                    error_detail = null
              where id = :id
@@ -612,6 +716,7 @@ async def _parse_itemdays(db: AsyncSession, upload: Any, data: bytes) -> dict[st
             "warnings": json.dumps(result.warnings, default=str),
             "adapter": result.adapter_version,
             "net": result.net_paise,
+            "restaurant": result.restaurant,
         },
     )
     await db.commit()
@@ -723,7 +828,8 @@ async def list_uploads(
                            u.original_filename, u.file_sha256, u.status,
                            u.row_count, u.period_start, u.period_end,
                            u.warnings, u.error_detail, u.adapter_version,
-                           u.parsed_net_paise, u.created_at, u.parsed_at,
+                           u.parsed_net_paise, u.restaurant_name,
+                           u.created_at, u.parsed_at,
                            p.full_name as uploaded_by_name
                       from data_uploads u
                       join outlets o on o.id = u.outlet_id

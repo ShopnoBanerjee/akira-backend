@@ -45,19 +45,19 @@ Not yet chosen. `docs/OPEN_ITEMS.md` lists what is blocked and on whom —
 several Stage 2 threads are waiting on an export or a walk of the outlet
 rather than on code. Pick the next epic against that list.
 
-## P1 remainder: seeding users
+## Why users are seeded through the Auth API, not SQL
 
-Everything else in P1 is done and applied to Supabase. Users are not seeded,
-and deliberately not by SQL.
+P1 is complete — this section stayed in the future tense long after
+`scripts/seed_users.py` had run, and is kept only for the reason behind it.
 
 `profiles.id` references `auth.users`, which Supabase Auth owns. Inserting those
 rows directly produces accounts that look right in the table and cannot sign in:
 no password hash, no confirmation state, none of the encrypted columns GoTrue
-maintains. `scripts/seed_users.py` will create them through the Auth Admin API
-instead, then insert the matching `profiles`, `outlet_members` and
-`outlet_devices` rows.
+maintains. The script creates them through the Auth Admin API instead, then
+inserts the matching `profiles`, `outlet_members` and `outlet_devices` rows.
+Credentials land in `.seed-credentials.md`, which is gitignored.
 
-This is also where the shared-tablet model first becomes real: one device
+This is also where the shared-tablet model first became real: one device
 account per outlet, plus a PIN for each staff member.
 
 ## Why P3 is split

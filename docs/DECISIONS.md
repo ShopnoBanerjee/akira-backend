@@ -1002,9 +1002,65 @@ unmapped ingredient as staff meals.
 (the shape was established from an older export of another restaurant),
 so the live tables sit empty until one is uploaded — every dependent
 surface reads "pending" with its reason, which is the designed cold state.
-There is also no restaurant-name guard on upload: a file from the wrong
-restaurant would ingest silently. Recorded in OPEN_ITEMS with the alias
-problem it shares.
+The restaurant-name guard that used to be missing here is D25.
+
+---
+
+## D25 — The export has to say which restaurant it is (P19)
+
+Every Petpooja report carries a `Restaurant Name:` line in its preamble. All
+three adapters read it and threw it away, so an export from a different venue
+— a second restaurant in the same Petpooja account, a file forwarded by the
+wrong person — ingested silently against whichever outlet the uploader picked.
+Afterwards nothing about the rows looked wrong. It just read like a quiet
+month.
+
+**The expectation is a setting, not a constant.** `sales.petpooja_restaurant_name`,
+outlet-overridable, empty by default. D9's append-only settings table already
+gives it history, an admin screen and a per-outlet override, so this needed no
+new table and no deploy to arm.
+
+**Empty means unarmed.** Shipping a guard that blocks every upload until
+somebody configures it would have taken sales ingestion down on the day it
+landed. So the check returns early when the setting is blank — but the name
+the file claimed is recorded on `data_uploads.restaurant_name` either way,
+which is what turns arming it into a copy-paste rather than a guess, and what
+lets `select distinct restaurant_name from data_uploads` answer "has anything
+foreign ever landed here" across the whole history rather than only since.
+
+**Armed, it fails closed.** A file with no `Restaurant Name:` line at all is
+refused too. "Cannot be checked" is not "checked and fine", and a stripped
+preamble must not be the way in.
+
+**Two checks, not one.** At request time, before the bytes reach Storage and
+before a row exists, so a refused file leaves nothing to clean up and the
+person holding the wrong spreadsheet hears about it while they still remember
+sending it. Then again at parse time, because a re-parse reads a file that was
+accepted under whatever the setting said *then*, and must obey what it says
+*now*. The second check is the one that has no request to reject into: it
+lands as `status = 'failed'` with the reason on the row.
+
+**Matching is whole-string, after folding case and whitespace.** "AKIRA Ramen"
+and "akira  ramen" are one venue; "Akira" and "Akira Ramen Bangalore" are not.
+A prefix or substring match would accept exactly the file this exists to
+refuse, so the normaliser deliberately does less than it could.
+
+**What it cannot do, stated plainly:** it cannot catch New Town's export filed
+against the other outlet. Both outlets sit under one Petpooja account and
+print the same name — the same reason the uploader picks the outlet by hand in
+the first place. Nothing in the file distinguishes them. This guard is about
+the wrong *restaurant*, never the wrong *outlet*.
+
+**Found on the way in:** `_decode` in `settings_value.py` ran `json.loads` on
+any value that came back as a `str`, and the settings router had two more
+copies of the same line. That works for numbers and booleans — a decoded one
+is not a `str` at all — and every setting anyone had ever changed live was
+numeric or boolean, so it had never fired. The first string setting broke it:
+resolving raised, and `GET /settings` returned 500 for *every* key, not just
+the one that was set. The four `jobs.*_time` settings were sitting on the same
+mine. One decoder now, shared, and it is type-aware rather than guessing —
+a restaurant called "123" must not resolve to the integer 123, which is the
+case `json.loads` gets silently wrong rather than loudly.
 
 ---
 

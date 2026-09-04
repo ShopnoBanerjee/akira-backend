@@ -48,6 +48,10 @@ class UploadRow(BaseModel):
     error_detail: str | None
     adapter_version: str | None
     parsed_net_paise: int | None
+    #: The "Restaurant Name:" the file claimed. Null for uploads that predate
+    #: the guard, or for a report with no such preamble line. This is the
+    #: string to copy into the expected-restaurant setting.
+    restaurant_name: str | None = None
     uploaded_by_name: str | None
     created_at: datetime
     parsed_at: datetime | None

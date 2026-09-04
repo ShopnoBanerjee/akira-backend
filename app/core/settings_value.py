@@ -23,9 +23,10 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.settings_registry import REGISTRY
+from app.core.settings_registry import REGISTRY, SettingDef
 
 __all__ = [
+    "decode_stored",
     "resolve",
     "resolve_bool",
     "resolve_float",
@@ -41,11 +42,30 @@ _RESOLVE_SQL = text(
 )
 
 
-def _decode(raw: Any) -> Any:
-    """asyncpg hands jsonb back as text; SQLAlchemy sometimes decodes it."""
-    if isinstance(raw, str):
-        return json.loads(raw)
-    return raw
+def decode_stored(raw: Any, definition: SettingDef) -> Any:
+    """One stored jsonb value as Python, whichever way the driver handed it over.
+
+    jsonb arrives either as its JSON *text* (``'"Akira Ramen"'``) or already
+    decoded to the bare value (``'Akira Ramen'``), depending on whether the
+    driver's jsonb codec ran. For numbers and booleans the two are
+    distinguishable by type — a decoded one is not a `str` at all — which is
+    why this went unnoticed: every setting anybody had ever changed was a
+    number or a boolean.
+
+    A *string* setting is not distinguishable that way, and `json.loads` is the
+    wrong tool for telling them apart. It raises on an already-decoded name,
+    which is a crash, and worse it SUCCEEDS on a restaurant called "123",
+    quietly resolving a text setting to the integer 123. So string and time
+    values are unwrapped only when they carry the quotes that mark them as
+    JSON text, and taken as-is otherwise.
+    """
+    if not isinstance(raw, str):
+        return raw
+    if definition.type in ("string", "time"):
+        if len(raw) >= 2 and raw.startswith('"') and raw.endswith('"'):
+            return json.loads(raw)
+        return raw
+    return json.loads(raw)
 
 
 async def resolve(
@@ -62,7 +82,7 @@ async def resolve(
     raw = (await db.execute(_RESOLVE_SQL, {"key": key, "outlet_id": outlet_id, "at": at})).scalar()
     if raw is None:
         return definition.default
-    value = _decode(raw)
+    value = decode_stored(raw, definition)
     return definition.default if value is None else value
 
 
@@ -93,7 +113,7 @@ async def resolve_many(
     ).mappings()
     resolved: dict[str, Any] = {}
     for row in rows:
-        value = _decode(row["value"])
+        value = decode_stored(row["value"], REGISTRY[row["key"]])
         resolved[row["key"]] = REGISTRY[row["key"]].default if value is None else value
     # unnest drops nothing, but a key that somehow missed still gets its default
     # rather than a KeyError three frames away in the caller.
@@ -138,9 +158,9 @@ async def resolve_many_outlets(
     ).mappings()
     resolved: dict[uuid.UUID, dict[str, Any]] = {o: {} for o in outlet_ids}
     for row in rows:
-        value = _decode(row["value"])
-        outlet = uuid.UUID(str(row["outlet_id"]))
         key = row["key"]
+        value = decode_stored(row["value"], REGISTRY[key])
+        outlet = uuid.UUID(str(row["outlet_id"]))
         resolved[outlet][key] = REGISTRY[key].default if value is None else value
     for per_outlet in resolved.values():
         for key in keys:

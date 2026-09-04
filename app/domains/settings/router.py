@@ -22,6 +22,7 @@ from app.core.deps import CurrentUserDep, DbDep, require_admin
 from app.core.enums import AuditAction
 from app.core.errors import ForbiddenError, NotFoundError, ValidationError
 from app.core.settings_registry import REGISTRY, SettingDef, validate_value
+from app.core.settings_value import decode_stored
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -104,12 +105,14 @@ async def list_settings(db: DbDep) -> list[SettingView]:
     ).mappings()
     current: dict[str, Any] = {r["key"]: r["value"] for r in rows}
 
-    import json
-
     views: list[SettingView] = []
     for definition in REGISTRY.values():
         raw = current.get(definition.key)
-        value = json.loads(raw) if isinstance(raw, str) and raw else raw
+        # One decoder, shared with the resolver. This had its own copy, and
+        # the copy raised on any text value — so saving a job time or a
+        # restaurant name took the whole settings screen down with a 500,
+        # for every key, not just the one that was set.
+        value = decode_stored(raw, definition) if raw is not None else None
         views.append(
             SettingView(
                 key=definition.key,
@@ -140,8 +143,7 @@ async def setting_history(
     db: DbDep,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[SettingHistoryRow]:
-    _definition(key)
-    import json
+    definition = _definition(key)
 
     rows = (
         await db.execute(
@@ -164,7 +166,7 @@ async def setting_history(
             id=r["id"],
             scope=r["scope"],
             outlet_id=r["outlet_id"],
-            value=json.loads(r["value"]) if isinstance(r["value"], str) else r["value"],
+            value=decode_stored(r["value"], definition),
             effective_from=r["effective_from"],
             note=r["note"],
             set_by_name=r["set_by_name"],

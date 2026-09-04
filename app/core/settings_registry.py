@@ -445,6 +445,20 @@ REGISTRY: dict[str, SettingDef] = {
             minimum=1,
             maximum=3,
         ),
+        # --- Which restaurant an export is allowed to name -----------------
+        SettingDef(
+            "sales.petpooja_restaurant_name",
+            "sales",
+            "string",
+            "",
+            "Expected Petpooja restaurant name",
+            "The name in a Petpooja export's 'Restaurant Name:' preamble. An "
+            "upload naming anything else is refused. Leave empty to accept any "
+            "name — the guard is off until this is set, and the uploads list "
+            "shows what each accepted file actually claimed, which is where to "
+            "read the exact string to put here.",
+            outlet_overridable=True,
+        ),
         # --- Sales pillar targets (spec section 5 / P12) -------------------
         # Baselines from AKIRA's actual 17 Jul - 25 Aug trading data, seeded
         # as the spec's Stage-2 target bands and reviewed monthly. All
