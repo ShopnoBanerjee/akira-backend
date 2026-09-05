@@ -140,8 +140,10 @@ def main() -> None:
             total_copied += copied
             total_skipped += skipped
             total_failed += failed
+        prefix = "DRY RUN — " if DRY else ""
         print(
-            f"\n{'DRY RUN — ' if DRY else ''}total: copied {total_copied}, skipped {total_skipped}, failed {total_failed}"
+            f"\n{prefix}total: copied {total_copied}, "
+            f"skipped {total_skipped}, failed {total_failed}"
         )
         if total_failed:
             sys.exit(1)
