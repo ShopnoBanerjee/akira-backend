@@ -175,6 +175,8 @@ P7 added, all optional and all documented in `.env.example`:
 | | |
 |---|---|
 | `SCHEDULER_ENABLED` | Default true. **Exactly one instance may have this on.** |
+| `RATE_LIMIT_PER_MINUTE` | Default 600, per bearer token (else per address); 0 disables. P23. |
+| `ENV=production` | Refuses to start on any dev default (`Settings.production_problems()`); docs off; HSTS on. P23. |
 | `SMTP_HOST` / `_PORT` / `_USERNAME` / `_PASSWORD` / `_FROM` / `_STARTTLS` | Unset, so the digest degrades to logging and says so. |
 | `ANTHROPIC_API_KEY` | **Not set.** Without it the AI review records a skip rather than a verdict. |
 | `AI_REVIEW_MODEL` | `claude-sonnet-5` (D12). |
@@ -556,11 +558,18 @@ thinking, the model IDs — is not what a training prior will tell you.
 
 ---
 
-## 10. NEXT: not yet chosen
+## 10. NEXT: go-live
 
-P11–P17 are done (section 7). There is no P18 brief because the next epic has
-not been picked, and picking it is the owner's call — several Stage 2 threads
-are blocked on something only they can supply.
+P0–P23 are done (section 7). P23 (6 Sep 2026) made the current feature set
+production-ready without adding features: a startup guard that refuses dev
+defaults under `ENV=production`, a per-caller rate limit, security headers, a
+hardened single-worker Dockerfile, `fly.toml` for Mumbai, CSP/headers files
+for the web host, a root error boundary, `scripts/backup_db.py`,
+`scripts/prod_cutover.py` (dry-run by default, rehearsed in tests), the staff
+photo notice, and the CI action bumps. **`docs/RUNBOOK_DEPLOY.md` is the
+next thing to read**; everything in it is the owner's to do, in its order.
+
+The blockers below are unchanged and still the owner's:
 
 **Read `docs/OPEN_ITEMS.md` first.** It is the maintained list of deliberate
 gaps and says what unblocks each. As of P20 the live blockers are:

@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     # Salt for customer_phone_hash. Rotating this orphans existing hashes.
     PHONE_HASH_SALT: str = Field(default="dev-only-not-a-secret")
 
+    # Requests per minute per caller (bearer token, else client address), as
+    # a token bucket that can burst to the full minute's worth. 0 disables.
+    # See app/core/hardening.py for what this is and is not.
+    RATE_LIMIT_PER_MINUTE: int = 600
+
     # --- Scheduled jobs ----------------------------------------------------
     # APScheduler runs in-process, so exactly one instance may have this on.
     # A second replica would double-materialise and double-send the digest;
@@ -129,6 +134,57 @@ class Settings(BaseSettings):
         if self.OPENAI_COMPAT_MODEL:
             return self.OPENAI_COMPAT_MODEL
         return self.GEMINI_MODEL if self.openai_compat_is_gemini else ""
+
+    @property
+    def is_production(self) -> bool:
+        return self.ENV == "production"
+
+    def production_problems(self) -> list[str]:
+        """Everything that must be true before this configuration may serve
+        real traffic. Empty means go.
+
+        Checked at startup when ENV=production and the process refuses to
+        start otherwise. Each of these was a real near-miss: the salt default
+        is labelled so a config dump shows it, but a label is not a guard; a
+        localhost CORS origin in production is an allowlist that allows
+        nothing useful; a JWKS URL from a different project verifies tokens
+        against the wrong keys and every login fails in a way that looks like
+        the frontend's fault.
+        """
+        problems: list[str] = []
+        if not self.DATABASE_URL:
+            problems.append("DATABASE_URL is empty")
+        if not self.SUPABASE_URL:
+            problems.append("SUPABASE_URL is empty")
+        if not self.SUPABASE_SECRET_KEY:
+            problems.append("SUPABASE_SECRET_KEY is empty (actor tokens and Storage need it)")
+        if not self.SUPABASE_JWKS_URL:
+            problems.append("SUPABASE_JWKS_URL is empty")
+        elif self.SUPABASE_URL and not self.SUPABASE_JWKS_URL.startswith(
+            self.SUPABASE_URL.rstrip("/") + "/"
+        ):
+            problems.append("SUPABASE_JWKS_URL does not belong to SUPABASE_URL")
+        salt = self.PHONE_HASH_SALT
+        if salt in {"", "dev-only-not-a-secret", "change-me-before-any-real-ingest"}:
+            problems.append("PHONE_HASH_SALT is the development default")
+        elif len(salt) < 24:
+            problems.append("PHONE_HASH_SALT is shorter than 24 characters")
+        origins = self.cors_origins
+        if not origins:
+            problems.append("CORS_ORIGINS is empty")
+        for origin in origins:
+            if origin == "*":
+                problems.append("CORS_ORIGINS allows every origin")
+            elif "localhost" in origin or "127.0.0.1" in origin:
+                problems.append(f"CORS_ORIGINS contains a development origin: {origin}")
+            elif not origin.startswith("https://"):
+                problems.append(f"CORS_ORIGINS has a non-https origin: {origin}")
+        if self.SQL_ECHO:
+            problems.append("SQL_ECHO logs every statement, with parameters")
+        sender_domain = self.SMTP_FROM.rstrip(">").rsplit("@", 1)[-1].strip().lower()
+        if sender_domain in {"akira.local", "akira.example", "akira.test"}:
+            problems.append("SMTP_FROM is a placeholder address")
+        return problems
 
 
 @lru_cache

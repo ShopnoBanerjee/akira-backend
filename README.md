@@ -51,7 +51,13 @@ be applied to Supabase.
 uv run uvicorn app.main:app --reload
 ```
 
-API on http://localhost:8000 · docs at `/docs` · health at `/healthz`.
+API on http://localhost:8000 · docs at `/docs` (off in production) · health at `/healthz`.
+
+## Deploy
+
+One machine on Fly.io in Mumbai next to the database; `Dockerfile` and
+`fly.toml` are in the repo. `docs/RUNBOOK_DEPLOY.md` is the order of
+operations, the secrets list, and the go-live checklist.
 
 ## Checks
 

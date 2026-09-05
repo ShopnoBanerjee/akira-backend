@@ -4,7 +4,8 @@ The P10 review of what protects what, where each control is enforced, and how
 we know it works. "Proven by" names the test or the live verification — a
 control nobody has fired at is listed as such, not counted.
 
-Reviewed: 27 Aug 2026 (P10), re-reviewed 3 Sep 2026 (P18) after P11–P17 added
+Reviewed: 27 Aug 2026 (P10), re-reviewed 3 Sep 2026 (P18), production posture
+added 6 Sep 2026 (P23, rows 23–26). The P18 review covered P11–P17, which added
 11 tables, ~20 operations, two storage buckets and — new in kind — outbound
 calls carrying photographs to third-party model vendors.
 
@@ -45,6 +46,10 @@ publishable key leaks or a future feature reads Supabase directly.
 | 20 | The 11 tables added by P11–P17 | A new table shipping without RLS | The catalog audit (#4) is not a per-table list — it walks `pg_class` and fails on any public table lacking forced RLS or a policy, so tables added after this review are covered without editing it | `test_rls.py::TestEveryTableIsLockedDown` | ran 3 Sep 2026 against all 36 tables: 19 passed |
 | 21 | Every route | An endpoint shipping with no authorisation at all | Mechanical audit of all 98 routes: each carries an identity dependency; role guards distribute as 38 `require_management`, 21 `require_admin`, 7 `require_owner`, 7 floor-actor | routers throughout | AST audit run 3 Sep 2026 — **0 routes without a guard**. One flagged endpoint (`GET /outlets/{outlet_id}`) was a false positive: its check lives one layer down in `service.get_one` |
 | 22 | Grant posture after a restore | `pg_dump --no-privileges` into a new Supabase project drops every per-table GRANT/REVOKE; the platform default ACL then grants `anon` and `authenticated` ALL on every restored table (observed on Mumbai, 5 Sep 2026: anon ALL on 18 tables, authenticated ALL on 36) | `0021_grant_posture.sql`: a catalog-driven sweep of tables, sequences and functions, plus DEFAULT privileges for the migrating role so a table created tomorrow starts with the same posture; RLS stayed forced throughout, so nothing was exposed | `supabase/migrations/0021_grant_posture.sql` | `test_rls.py` catalog assertions run by hand against Mumbai after restore (anon 0 grants, authenticated SELECT on 36, 3 helper functions only); a throwaway table created after 0021 came up anon-nothing / authenticated-SELECT |
+| 23 | Every route | A runaway client, a credential-stuffing loop, or one tablet in a retry storm saturating the connection pool | Token bucket per caller (bearer token hash, else client address): `RATE_LIMIT_PER_MINUTE` (600) per minute with burst to the full minute; 429 problem+json with `Retry-After`; probes exempt; in-process, correct because the deployment is one process by construction | `app/core/hardening.py` `RateLimitMiddleware`, mounted inside CORS in `app/main.py` | `test_hardening.py` — burst then refusal, per-token budgets, probe exemption, headers on the 429 |
+| 24 | Every response | A browser reinterpreting JSON; a shared tablet's back-forward cache showing the last person's screen; the API framed | `X-Content-Type-Options: nosniff`, `Cache-Control: no-store` unless a handler set its own, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy`, HSTS in production only | `app/core/hardening.py` `SecurityHeadersMiddleware` | `test_hardening.py` — every response including the 429; HSTS only when production |
+| 25 | Production configuration | Shipping with a dev default: the placeholder salt, a localhost CORS origin, a JWKS URL from another project, `SQL_ECHO` on | With `ENV=production` the API **refuses to start** and lists every problem; `/docs`, `/redoc`, `/openapi.json` are off | `Settings.production_problems()`, `check_production_config` in `lifespan` | `test_hardening.py` — each rule individually, the complete configuration passing, the guard silent outside production |
+| 26 | The web origin | Script injection, clickjacking, mixed content, search indexing of an internal tool | CSP (`script-src 'self'`, `connect-src` limited to Supabase and the API, `frame-ancestors 'none'`), `X-Robots-Tag: noindex`, `robots.txt`, HSTS, immutable caching only under `/assets/` | `akira-frontend/public/_headers`, `vercel.json` (Cloudflare Pages / Netlify / Vercel) | config review; the CSP names `*.fly.dev` until the API origin is fixed — RUNBOOK_DEPLOY §3 says to tighten it |
 
 ---
 
@@ -67,19 +72,24 @@ publishable key leaks or a future feature reads Supabase directly.
   for anything but the advisory review, that becomes a consent question rather
   than a config one.
 
-- **No general API rate limiting.** The PIN flow has its own lockout (#7); the
-  rest relies on Supabase Auth's own limits and the small user population of an
-  internal tool. Add a gateway limit before any public exposure.
+- **Rate limiting is in-process** (#23). Correct for one machine, which the
+  scheduler already requires; a second replica would double the effective
+  limit. If the API ever scales out, both move to a shared store together.
 - **The old Groq key must be revoked in Groq's console.** It reached the
   project through a chat transcript; Groq is out of the code and `.env` (D28),
   but the key is live until revoked. The control that failed was human.
-- **`PHONE_HASH_SALT` has a dev default.** Production must set it; the default
-  is deliberately labelled `dev-only-not-a-secret` so a missed override is
-  visible in any config dump. Rotating it orphans existing hashes — that is
-  documented in the field's comment and is the accepted trade.
+- **`PHONE_HASH_SALT` has a dev default** and production refuses it (#25).
+  Rotating it orphans existing hashes — documented in the field's comment and
+  the accepted trade.
 - **Seeded PINs are sequential** (`1111`, `2222`, …) and their file says so
   loudly. They exist to be typed during testing and must be replaced through
   the admin UI before real use.
-- **No CSP/security headers on the API responses.** The API serves JSON to a
-  known SPA; headers belong on the frontend host. Recorded so nobody assumes
-  they exist here.
+- **The database password and the secret key have both been through chat
+  transcripts** (5 Sep 2026, during the region move). Neither is public, but
+  neither is known only to the dashboard either. Rotate both at go-live;
+  RUNBOOK_DEPLOY §5 has it on the checklist. `scripts/prod_cutover.py` says so
+  again when it finishes.
+- **Seeded accounts and the synthetic outlet are still live** by the owner's
+  instruction until go-live. `scripts/prod_cutover.py` is the one-shot removal,
+  rehearsed by `tests/test_prod_cutover.py`; it will not run without a real
+  owner account in place.

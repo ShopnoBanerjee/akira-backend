@@ -8,7 +8,7 @@ are deciding what to pick up.
 This is not a bug list. Nothing here is broken; broken things get fixed, not
 filed. It is the set of deliberate gaps, and it should shrink.
 
-Last reviewed: 5 Sep 2026, after the move to Mumbai (P21).
+Last reviewed: 6 Sep 2026, after the production-readiness pass (P23).
 
 **Keep it honest.** When you close one, delete the entry rather than marking it
 done — the file is only useful if everything in it is still true. When you open
@@ -123,24 +123,29 @@ and stays here:
 
 ---
 
-## Watch, not yet broken
+## Waiting for go-live day
 
-### The CI actions are on a deprecated Node
+### The API is not deployed; the frontend is not hosted
 
-Both workflows warn:
+Everything needed is in the repos — `Dockerfile`, `fly.toml` (region `bom`),
+the production guard, `public/_headers` / `vercel.json` for the web — and
+`docs/RUNBOOK_DEPLOY.md` is the order to do it in. What is missing is an
+account on Fly.io and on a CDN host, and about an hour.
 
-> Node.js 20 is deprecated. The following actions target Node.js 20 but are
-> being forced to run on Node.js 24: `actions/checkout@v4`,
-> `actions/setup-node@v4`, `pnpm/action-setup@v4`.
+**Unblocked by:** the owner following RUNBOOK_DEPLOY sections 1–3. Section 1
+comes first: a real owner account has to exist before anything else, because
+`owner@akira.test` is deleted at go-live.
 
-CI is green; GitHub is already forcing the newer runtime. It will stop being a
-warning at some point.
+### The synthetic data is still live
 
-**Unblocked by:** bumping the action majors — but do it on its own, as a
-deliberate change, so that if a bump breaks something the failure is
-unambiguous. It was left alone on 27 Aug specifically because backend CI had
-just been made green after eight epics red, and stacking an unrelated CI change
-on top of that would have muddied the signal.
+`AKR-DEV02`, the seeded runs at Safuipara, the eleven `@akira.test` accounts
+and their `1111`-style PINs. By the owner's instruction they stay until
+production. `scripts/prod_cutover.py` removes exactly that set and nothing
+else, is a dry run unless told otherwise, refuses without a real owner
+account, and is rehearsed by `tests/test_prod_cutover.py` against a fresh
+schema.
+
+**Unblocked by:** go-live day. RUNBOOK_DEPLOY §5 is the checklist.
 
 ---
 

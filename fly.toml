@@ -1,0 +1,55 @@
+# Fly.io configuration for the AKIRA Ops Suite API.
+#
+# Region "bom" is Mumbai, the same AWS region (ap-south-1) as the Supabase
+# project, so the API-to-database hop is about a millisecond instead of the
+# 60-80 ms it is from a laptop in Kolkata (D26). That one change is what
+# turns the multi-statement screens into sub-100 ms responses.
+#
+# ONE machine, always on. The in-process scheduler must run exactly once
+# (app/jobs/scheduler.py), and a machine that stops when idle would miss the
+# 05:00 materialisation. Deploy with `fly deploy --ha=false`; Fly's default
+# creates two machines for redundancy, which here means two digests.
+#
+# Secrets are NOT in this file. `fly secrets set` them - see
+# docs/RUNBOOK_DEPLOY.md for the full list and the order to do things in.
+
+app = "akira-ops-api"
+primary_region = "bom"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ENV = "production"
+  SCHEDULER_ENABLED = "true"
+  RATE_LIMIT_PER_MINUTE = "600"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/healthz"
+
+[[vm]]
+  # 512 MB: Argon2id is configured at 64 MiB per PIN check and Pillow decodes
+  # a 5 MB photo in the integrity pass; 256 MB was measured too tight for
+  # both at once.
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[deploy]
+  strategy = "immediate"

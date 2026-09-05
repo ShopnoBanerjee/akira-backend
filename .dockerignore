@@ -6,5 +6,15 @@ __pycache__
 .ruff_cache
 .env
 .env.*
+.seed-credentials.md
 docs
 tests
+scripts
+supabase
+local
+openapi.json
+*.xlsx
+*.xls
+*.csv
+*.dump
+*.backup

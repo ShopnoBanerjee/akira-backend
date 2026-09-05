@@ -31,10 +31,10 @@ jobs:
       TEST_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/postgres
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v6
         with:
           version: "0.5.25"
           enable-cache: true

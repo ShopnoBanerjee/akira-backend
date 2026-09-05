@@ -18,7 +18,7 @@ uv run ruff check . && uv run mypy app/
 
 `.env` is gitignored and holds everything: `DATABASE_URL` (direct Postgres,
 service role), `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_PUBLISHABLE_KEY`,
-`SUPABASE_JWKS_URL`, `ACTOR_TOKEN_SECRET`, `PHONE_HASH_SALT`, and the AI pair
+`SUPABASE_JWKS_URL`, `PHONE_HASH_SALT`, and the AI pair
 (`AI_REVIEW_PROVIDER` + its key). Missing pieces fail loudly at startup or at
 first use — nothing silently degrades except the two things designed to
 (digest mail and AI review, below).
@@ -91,7 +91,8 @@ beside the database that multiplier is ~1 ms. If an endpoint regressed, count
 its statements before touching any SQL: the fixed budget is 1 auth query + 1–2
 statements for lists, and the engine deliberately runs autocommit for GETs
 with no `pool_pre_ping` — do not "fix" a timeout by turning the ping back on;
-`pool_recycle=240` is what replaces it.
+`pool_recycle` (30 minutes, with server-side TCP keepalives) is what replaces
+it. Deployed beside the database (RUNBOOK_DEPLOY) the multiplier disappears.
 
 **"An outlet's score looks wrong."**
 Read `/dashboard/outlet-health` before doubting the number — it shows every
@@ -131,11 +132,23 @@ reads the same moment. Nothing to do.
 | Rotate the actor secret | change `ACTOR_TOKEN_SECRET`, restart | floor re-identifies with PINs; nothing persisted |
 | Rotate an AI key | change the env var, restart | reviews are advisory; history keeps `(model, prompt_version)` rows |
 
-Database backups are Supabase-managed (daily, point-in-time on paid tiers) —
-recovery from data loss is a Supabase dashboard operation, not a repo one.
-The one thing a restore cannot bring back is Storage objects deleted since the
-snapshot; photo metadata rows point at them, which is why deletes in this
+**Backups are ours to take.** The free tier keeps none, and the paid tier's
+snapshot cannot be exported. `uv run python scripts/backup_db.py` writes a
+restorable pair (`public.dump` + `auth_users.sql`) under `local/backups/` and
+proves `pg_restore` can read it; `scripts/copy_storage.py` is the Storage
+half. Restore order is auth users first, then public, then migration 0021 —
+`RUNBOOK_REGION_MOVE.md` is the as-run record. Storage objects deleted since a
+copy are gone for good; photo rows point at them, which is why deletes in this
 codebase are soft everywhere the spec allows.
+
+**"The API refuses to start."** With `ENV=production` it lists what is wrong
+(`Refusing to start with ENV=production:` in the logs) and exits. Fix the
+named setting; nothing else is needed. `RUNBOOK_DEPLOY.md` §0 has the rules.
+
+**"Someone is getting 429s."** `RATE_LIMIT_PER_MINUTE` (600) is per bearer
+token. A dashboard load is about a dozen requests, a floor run about twenty
+over ten minutes; a real user hitting the limit means a client bug or the
+number, not the user. `Retry-After` on the response says how long.
 
 ## When you change something
 

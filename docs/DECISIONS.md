@@ -1312,3 +1312,65 @@ the four spellings; the measured Donburi rate went from blank to 16% against
 Petpooja's 18%, and no bill name is unmapped. The Sales page offers a "map this
 name" control the moment a new unmapped spelling appears, so the next menu
 change costs a dropdown, not a ticket.
+
+## D30 — Production is a contract the process enforces, on one machine (P23)
+
+**Context.** Every feature the owner asked for is built; what was missing was
+the posture to run it for real. The gaps recorded in SECURITY.md were: no
+rate limit, no headers, a salt with a dev default that nothing refused,
+`/docs` open, no deployment target, no backup routine on a free tier that
+keeps none, synthetic data that has to go on a specific day, and staff who
+had not been told their photographs go to a vendor.
+
+**Decision, in five parts.**
+
+1. **`ENV=production` refuses dev defaults.** `Settings.production_problems()`
+   returns every violation at once and `lifespan` raises before the pool
+   warms, so a bad deploy never takes traffic and the platform keeps the
+   previous release. Warnings were rejected: the salt's default had been
+   "labelled so a config dump shows it" since P10 and nobody reads config
+   dumps at 05:00.
+
+2. **One machine, in-process everything.** The scheduler already forbade a
+   second instance. Rather than build a shared store for a rate limiter and
+   an identity cache to make replicas possible, the deployment states the
+   constraint out loud: one uvicorn worker, one Fly machine, auto-stop off,
+   `--ha=false`. The limiter is a token bucket per bearer token (per address
+   when anonymous), 600 a minute with burst, 429 as problem+json. It is a
+   safety valve for the connection pool, not a security boundary; the PIN
+   lockout and Supabase Auth remain those.
+
+3. **Fly.io `bom`, because it is ap-south-1.** Region was the whole reason
+   for P21; a host in Singapore would give half of it back. Fly has no free
+   tier (about $3/month); Cloud Run in `asia-south1` scales to zero, which
+   kills the scheduler, and keeping one instance warm costs more. The web
+   app is static and goes on any CDN; Cloudflare Pages recommended because
+   its free tier permits commercial use and Vercel's does not.
+
+4. **Go-live is a script with a dry run, not a checklist of SQL.**
+   `scripts/prod_cutover.py` removes exactly the synthetic set (DEV02, the
+   seeded Safuipara history before a date, the `@akira.test` accounts and
+   their device rows), keeps everything real (sales, counts, settings,
+   templates, audit), audits itself, and refuses to execute unless an active
+   owner with a real email exists — the failure it guards against is
+   deleting the only login. It is rehearsed by a test that runs the real
+   cascades inside a rolled-back transaction. The owner's standing
+   instruction ("do not deactivate sample data till we go to prod") is
+   honoured by the default being a report.
+
+5. **Backups are a script run by a person.** `scripts/backup_db.py` is the
+   region move's two-dump recipe made repeatable, with a `pg_restore --list`
+   proof. A scheduled job was considered and rejected: a GitHub Action would
+   put a database dump in a public repo's artifact store, and the API
+   machine has no durable disk. Weekly by hand, moved off the laptop, is
+   honest about what this tier is.
+
+**Rejected.** A Redis-backed limiter (a second service for a one-machine
+app); Cloudflare Workers/Access in front of the API (a good idea later, a new
+vendor now); disabling `/docs` everywhere (the local developer loop uses
+them); deleting synthetic data "softly" (the dashboard's trend would carry
+eight weeks of invented history into production).
+
+**What this does not do.** It does not deploy anything — that needs the
+owner's accounts — and it does not rotate the two secrets that have been
+through chat. Both are the first and last items on RUNBOOK_DEPLOY's list.
