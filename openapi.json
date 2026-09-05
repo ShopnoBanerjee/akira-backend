@@ -543,6 +543,65 @@
         }
       }
     },
+    "/users/{profile_id}/training-delegate": {
+      "put": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Let a manager restart other people's training (owner only)",
+        "description": "Restarting training is the owner's (D31). This hands it to one manager:\nan operations manager may then restart anyone's, an outlet manager only\npeople at their own outlets. Floor roles cannot hold it.",
+        "operationId": "set_training_delegate_users__profile_id__training_delegate_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetTrainingDelegateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserListItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/outlets": {
       "get": {
         "tags": [
@@ -3471,6 +3530,418 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Delete Forecast Event Sales Forecast Events  Event Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/training/me": {
+      "get": {
+        "tags": [
+          "training"
+        ],
+        "summary": "Whether the walkthrough has to run for the person acting",
+        "operationId": "my_status_training_me_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "description": "The content version the client carries",
+              "title": "Version"
+            },
+            "description": "The content version the client carries"
+          },
+          {
+            "name": "X-Actor-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "On a shared-tablet session: the assertion from /floor/identify.",
+              "title": "X-Actor-Token"
+            },
+            "description": "On a shared-tablet session: the assertion from /floor/identify."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/training/me/start": {
+      "post": {
+        "tags": [
+          "training"
+        ],
+        "summary": "Begin the walkthrough, or resume the attempt already open",
+        "operationId": "start_training_me_start_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Actor-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "On a shared-tablet session: the assertion from /floor/identify.",
+              "title": "X-Actor-Token"
+            },
+            "description": "On a shared-tablet session: the assertion from /floor/identify."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/training/me/step": {
+      "post": {
+        "tags": [
+          "training"
+        ],
+        "summary": "Record that a step was reached",
+        "operationId": "step_training_me_step_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Actor-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "On a shared-tablet session: the assertion from /floor/identify.",
+              "title": "X-Actor-Token"
+            },
+            "description": "On a shared-tablet session: the assertion from /floor/identify."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/training/me/complete": {
+      "post": {
+        "tags": [
+          "training"
+        ],
+        "summary": "Finish the walkthrough",
+        "operationId": "complete_training_me_complete_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Actor-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "On a shared-tablet session: the assertion from /floor/identify.",
+              "title": "X-Actor-Token"
+            },
+            "description": "On a shared-tablet session: the assertion from /floor/identify."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/training/me/skip": {
+      "post": {
+        "tags": [
+          "training"
+        ],
+        "summary": "Skip the walkthrough (owner only)",
+        "operationId": "skip_training_me_skip_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Actor-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "On a shared-tablet session: the assertion from /floor/identify.",
+              "title": "X-Actor-Token"
+            },
+            "description": "On a shared-tablet session: the assertion from /floor/identify."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/training/people": {
+      "get": {
+        "tags": [
+          "training"
+        ],
+        "summary": "Who has been through the walkthrough, and who has not",
+        "operationId": "people_status_training_people_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PersonTraining"
+                  },
+                  "type": "array",
+                  "title": "Response People Status Training People Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/training/people/{profile_id}/reset": {
+      "post": {
+        "tags": [
+          "training"
+        ],
+        "summary": "Restart somebody's training; their next visit runs the walkthrough again",
+        "description": "The owner may restart anyone's. A manager may only when the owner has\ndelegated it to them (People page), and only for people at their outlets;\nthe service decides and refuses otherwise.",
+        "operationId": "reset_training_people__profile_id__reset_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonTraining"
                 }
               }
             }
@@ -7630,6 +8101,10 @@
             "type": "boolean",
             "title": "Has Pin"
           },
+          "can_restart_training": {
+            "type": "boolean",
+            "title": "Can Restart Training"
+          },
           "outlets": {
             "items": {
               "$ref": "#/components/schemas/OutletSummary"
@@ -7660,6 +8135,7 @@
           "is_management",
           "is_global",
           "has_pin",
+          "can_restart_training",
           "outlets"
         ],
         "title": "MeResponse"
@@ -8359,6 +8835,170 @@
         ],
         "title": "OutletSummary"
       },
+      "PersonTraining": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Profile Id"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          },
+          "global_role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "track": {
+            "type": "string",
+            "enum": [
+              "management",
+              "floor"
+            ],
+            "title": "Track"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "in_progress",
+              "completed",
+              "skipped",
+              "reset"
+            ],
+            "title": "Status"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "en",
+                  "bn"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "last_step": {
+            "type": "integer",
+            "title": "Last Step"
+          },
+          "total_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Steps"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "skipped_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped At"
+          },
+          "triggered_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggered By Name"
+          },
+          "reset_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reset At"
+          },
+          "can_reset": {
+            "type": "boolean",
+            "title": "Can Reset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "full_name",
+          "global_role",
+          "is_active",
+          "track",
+          "status",
+          "version",
+          "language",
+          "last_step",
+          "total_steps",
+          "started_at",
+          "completed_at",
+          "skipped_at",
+          "triggered_by_name",
+          "reset_at",
+          "can_reset"
+        ],
+        "title": "PersonTraining",
+        "description": "One row of the owner's 'who has been trained' view."
+      },
       "PhotoConfirmRequest": {
         "properties": {
           "path": {
@@ -8635,6 +9275,21 @@
           "lines"
         ],
         "title": "RecipeSave"
+      },
+      "RecordRequest": {
+        "properties": {
+          "record_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Record Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "record_id"
+        ],
+        "title": "RecordRequest"
       },
       "ReferencePhoto": {
         "properties": {
@@ -9204,6 +9859,20 @@
         ],
         "title": "SetSettingRequest"
       },
+      "SetTrainingDelegateRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "SetTrainingDelegateRequest"
+      },
       "SettingHistoryRow": {
         "properties": {
           "id": {
@@ -9359,6 +10028,60 @@
         ],
         "title": "SettingView",
         "description": "One setting as the admin screen shows it: definition plus current value."
+      },
+      "StartRequest": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Version"
+          },
+          "total_steps": {
+            "type": "integer",
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Total Steps"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "en",
+              "bn"
+            ],
+            "title": "Language"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "total_steps",
+          "language"
+        ],
+        "title": "StartRequest"
+      },
+      "StepRequest": {
+        "properties": {
+          "record_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Record Id"
+          },
+          "step": {
+            "type": "integer",
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Step"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "record_id",
+          "step"
+        ],
+        "title": "StepRequest"
       },
       "SubmitRequest": {
         "properties": {
@@ -9731,6 +10454,200 @@
           "assignment_count"
         ],
         "title": "TemplateSummary"
+      },
+      "TrainingRecord": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Profile Id"
+          },
+          "track": {
+            "type": "string",
+            "enum": [
+              "management",
+              "floor"
+            ],
+            "title": "Track"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "en",
+                  "bn"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "total_steps": {
+            "type": "integer",
+            "title": "Total Steps"
+          },
+          "last_step": {
+            "type": "integer",
+            "title": "Last Step"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "in_progress",
+              "completed",
+              "skipped",
+              "reset"
+            ],
+            "title": "Status"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "skipped_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped At"
+          },
+          "triggered_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggered By"
+          },
+          "triggered_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggered By Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "profile_id",
+          "track",
+          "version",
+          "language",
+          "total_steps",
+          "last_step",
+          "status",
+          "started_at",
+          "updated_at",
+          "completed_at",
+          "skipped_at",
+          "triggered_by",
+          "triggered_by_name"
+        ],
+        "title": "TrainingRecord"
+      },
+      "TrainingStatus": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Profile Id"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "track": {
+            "type": "string",
+            "enum": [
+              "management",
+              "floor"
+            ],
+            "title": "Track"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required"
+          },
+          "can_skip": {
+            "type": "boolean",
+            "title": "Can Skip"
+          },
+          "record": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrainingRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "full_name",
+          "role",
+          "track",
+          "version",
+          "required",
+          "can_skip",
+          "record"
+        ],
+        "title": "TrainingStatus",
+        "description": "What the client needs to decide whether to run the tour right now."
       },
       "UnmappedName": {
         "properties": {
@@ -10613,6 +11530,10 @@
             "type": "boolean",
             "title": "Has Pin"
           },
+          "can_restart_training": {
+            "type": "boolean",
+            "title": "Can Restart Training"
+          },
           "last_seen_at": {
             "anyOf": [
               {
@@ -10643,6 +11564,7 @@
           "global_role",
           "is_active",
           "has_pin",
+          "can_restart_training",
           "last_seen_at",
           "outlets"
         ],

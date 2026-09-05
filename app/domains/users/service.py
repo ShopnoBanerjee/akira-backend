@@ -32,6 +32,7 @@ def _to_me(user: CurrentUser, profile: dict[str, Any]) -> MeResponse:
         is_management=UserRole(profile["global_role"]) in MANAGEMENT_ROLES,
         is_global=user.is_global,
         has_pin=profile["has_pin"],
+        can_restart_training=bool(profile.get("can_restart_training")),
         outlets=[
             OutletSummary(
                 outlet_id=m.outlet_id,
@@ -69,6 +70,7 @@ async def get_me(db: AsyncSession, user: CurrentUser) -> MeResponse:
             is_management=False,
             is_global=False,
             has_pin=False,
+            can_restart_training=False,
             outlets=[],
             device=DeviceSummary(
                 device_id=user.device.device_id,

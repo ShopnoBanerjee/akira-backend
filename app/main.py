@@ -29,6 +29,7 @@ from app.domains.sop.reference_router import router as reference_router
 from app.domains.sop.review_router import router as review_router
 from app.domains.sop.router import router as sop_router
 from app.domains.sop.runs_router import floor_router, runs_router
+from app.domains.training.router import router as training_router
 from app.domains.users.router import router as users_router
 from app.integrations import storage
 from app.jobs import scheduler
@@ -126,6 +127,7 @@ def create_app(cfg: Settings) -> FastAPI:
     application.include_router(jobs_router)
     application.include_router(dashboard_router)
     application.include_router(sales_router)
+    application.include_router(training_router)
     # runs_router first: /sop/runs/... must match before /sop's own routes.
     application.include_router(runs_router)
     application.include_router(review_router)

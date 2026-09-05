@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 _SELECT_PROFILE = text(
     """
     select id, full_name, phone, employee_code, global_role, is_active,
-           pin_hash is not null as has_pin
+           pin_hash is not null as has_pin, can_restart_training
       from profiles
      where id = :profile_id
        and deleted_at is null
@@ -24,7 +24,7 @@ _UPDATE_PROFILE = text(
      where id = :profile_id
        and deleted_at is null
     returning id, full_name, phone, employee_code, global_role, is_active,
-              pin_hash is not null as has_pin
+              pin_hash is not null as has_pin, can_restart_training
     """
 )
 
@@ -56,7 +56,7 @@ _SELECT_PROFILE_AND_TOUCH = text(
                 or last_seen_at < now() - make_interval(mins => :stale_minutes))
     )
     select id, full_name, phone, employee_code, global_role, is_active,
-           pin_hash is not null as has_pin
+           pin_hash is not null as has_pin, can_restart_training
       from profiles
      where id = :profile_id
        and deleted_at is null
@@ -107,7 +107,7 @@ async def update_profile(
 _LIST_USERS = """
     select p.id as profile_id, p.full_name, p.phone, p.employee_code,
            p.global_role, p.is_active, p.last_seen_at,
-           p.pin_hash is not null as has_pin
+           p.pin_hash is not null as has_pin, can_restart_training
       from profiles p
      where p.deleted_at is null
 """

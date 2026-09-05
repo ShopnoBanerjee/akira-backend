@@ -123,6 +123,18 @@ and stays here:
 
 ---
 
+## Waiting on the owner's review
+
+### The walkthrough's wording
+
+Every step of the training tour (P24) — English and Bengali, both tracks — is
+in `akira-frontend/src/features/training/content.ts` and was written by the
+assistant. The owner chose review-before-ship over an in-app editor.
+
+**Unblocked by:** the owner reading the steps once (the P24 summary lists
+them) and naming any change. A wording change bumps that track's version;
+completions on the old version stay valid (D31).
+
 ## Waiting for go-live day
 
 ### The API is not deployed; the frontend is not hosted

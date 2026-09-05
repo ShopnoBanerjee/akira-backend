@@ -278,7 +278,7 @@ this workflow. Read the file, run it inside a transaction with asyncpg using
 
 ## 7. What is built (P0–P17)
 
-**102 API operations across 84 paths. 39 tables, 23 migrations. All live on
+**110 API operations across 92 paths. 40 tables, 24 migrations. All live on
 Supabase, and CI is green.** Test counts move every epic — run the suites
 rather than quoting this line.
 
@@ -557,6 +557,21 @@ current API shape — `client.messages.parse`, `output_config.effort`, adaptive
 thinking, the model IDs — is not what a training prior will tell you.
 
 ---
+
+## 9.4 The training walkthrough (P24, D31) — `app/domains/training/`, `akira-frontend/src/features/training/`
+
+Content (steps, EN + BN, anchors) is in the frontend's `content.ts`; the
+database keeps `training_records`. `GET /training/me?version=` says whether
+the tour must run for whoever is acting (manager login, or PIN actor on a
+tablet); `start`/`step`/`complete`/`skip` record it; `GET /training/people`
+is the People page's column; `POST /training/people/{id}/reset` restarts.
+Rules live in `service.py` and are tested in `tests/test_training.py`: track
+by role, skip owner-only, completion survives version bumps, restart
+supersedes and attributes, delegation via `profiles.can_restart_training`
+(owner sets it with `PUT /users/{id}/training-delegate`). Frontend gates:
+`ManagementTrainingGate` wraps every `/app` page, `FloorTrainingGate` wraps
+the floor shell and keys on the actor. Anchors are `data-tour` attributes;
+`tour.test.ts` validates the content on every build.
 
 ## 10. NEXT: go-live
 

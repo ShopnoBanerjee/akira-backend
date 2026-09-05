@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
-from app.core.deps import CurrentUserDep, DbDep, require_management
+from app.core.deps import CurrentUserDep, DbDep, require_management, require_owner
 from app.core.enums import UserRole
 from app.domains.users import admin_service, service
 from app.domains.users.schemas import (
@@ -15,6 +15,7 @@ from app.domains.users.schemas import (
     SetOutletsRequest,
     SetPinRequest,
     SetRoleRequest,
+    SetTrainingDelegateRequest,
     UpdateMeRequest,
     UpdateUserRequest,
     UserListItem,
@@ -217,6 +218,32 @@ async def set_user_pin(
     have one.
     """
     return await admin_service.set_pin(
+        db,
+        user,
+        profile_id,
+        payload,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+
+
+@router.put(
+    "/{profile_id}/training-delegate",
+    response_model=UserListItem,
+    dependencies=[Depends(require_owner)],
+    summary="Let a manager restart other people's training (owner only)",
+)
+async def set_training_delegate(
+    profile_id: uuid.UUID,
+    payload: SetTrainingDelegateRequest,
+    request: Request,
+    db: DbDep,
+    user: CurrentUserDep,
+) -> UserListItem:
+    """Restarting training is the owner's (D31). This hands it to one manager:
+    an operations manager may then restart anyone's, an outlet manager only
+    people at their own outlets. Floor roles cannot hold it."""
+    return await admin_service.set_training_delegate(
         db,
         user,
         profile_id,

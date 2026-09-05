@@ -1374,3 +1374,66 @@ eight weeks of invented history into production).
 **What this does not do.** It does not deploy anything — that needs the
 owner's accounts — and it does not rotate the two secrets that have been
 through chat. Both are the first and last items on RUNBOOK_DEPLOY's list.
+
+## D31 — Training is a recorded walk through the real screens, restartable by the owner (P24)
+
+**Context.** The owner asked for a first-login instruction manual: a tap-by-tap
+guide of the UI, per role, that cannot be skipped, with completion tracked so
+the owner knows a person has been through it, and restartable when a manager
+or staff member changes and the same device passes to the new one. The
+product questions were put to the owner rather than assumed (6 Sep 2026):
+
+| Question | Owner's answer |
+|---|---|
+| Who may skip; who may restart others' | Skip: owner only. Restart: owner, delegable per manager |
+| Floor staff mid-shift | Block fully until finished |
+| Devices | Any: tablet, laptop, phone → mobile navigation first |
+| Guide style | Spotlight on real screens; Next advances |
+| Language | Ask at the start; a toggle on every card |
+| Where the owner sees it | People page column and drawer |
+| Content changes | A completion stays valid; only a restart re-requires |
+| Wording | Fixed in the app; owner reviews before ship |
+
+**Decision.**
+
+1. **Content in the client, record in the database.** Steps point at
+   `data-tour` attributes on real controls, so they live beside the UI
+   (`akira-frontend/src/features/training/content.ts`, English and Bengali,
+   versioned per track). The database keeps only facts: `training_records`,
+   one row per attempt — who, track, version, language, steps reached with
+   times, device, started/completed/skipped, restarted by whom. Rows are
+   never edited into another attempt.
+2. **The track follows the role, server-side.** `management` for owner,
+   ops manager, outlet manager; `floor` for shift lead and staff. The client
+   cannot record itself on the other one. On the shared tablet the trainee is
+   the PIN-identified actor, resolved exactly as floor endpoints resolve it;
+   the device itself is never a trainee.
+3. **Required means required.** `required = no live completed-or-skipped
+   attempt on the track`. Skip is refused for every role but owner, in the
+   service, not the button. Version is recorded, not enforced: a person who
+   finished v1 is not interrupted by v2.
+4. **Restart supersedes and attributes.** A restart marks every live attempt
+   superseded (or writes a superseded placeholder if none existed) and the
+   next attempt's `triggered_by` is whoever asked. Owners may always;
+   managers only with `profiles.can_restart_training`, set by the owner on
+   the People page: an ops manager anywhere, an outlet manager for people at
+   their own outlets. `can_reset()` is a pure function with a tested table.
+5. **Next advances; the control is shown, not pressed.** A tap on the real
+   control could navigate somewhere the next step does not expect, or sign
+   out. The overlay blocks everything else; the spotlight and card follow
+   the control on scroll and resize; a missing anchor (an empty run list)
+   degrades to a centred card so the tour never stalls.
+6. **The management shell gets a mobile drawer.** It had none, and the
+   owner confirmed phones. The tour asks the shell to open the drawer for
+   menu steps and close it for page steps, by event, so the same anchors
+   serve the sidebar and the drawer.
+
+**Rejected.** Content in the database with an admin editor (a day more, and
+the owner chose review-before-ship); auto-retraining on version bumps
+(interrupts a shift for a wording change); requiring the real control to be
+tapped (side effects); ops managers as skippers (the owner wants them walked
+through).
+
+**What the owner reviews.** Every step's English and Bengali text is in
+`content.ts`; the P24 summary listed it. A wording change is a code change
+and a version bump; completions stay.

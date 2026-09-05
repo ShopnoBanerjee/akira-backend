@@ -7,6 +7,7 @@ in one readable place rather than scattered across these methods.
 import uuid
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record
@@ -24,6 +25,7 @@ from app.domains.users.schemas import (
     SetOutletsRequest,
     SetPinRequest,
     SetRoleRequest,
+    SetTrainingDelegateRequest,
     UpdateUserRequest,
     UserListItem,
 )
@@ -48,6 +50,7 @@ def _to_item(row: dict[str, Any], memberships: list[dict[str, Any]]) -> UserList
         global_role=UserRole(row["global_role"]),
         is_active=row["is_active"],
         has_pin=row["has_pin"],
+        can_restart_training=bool(row.get("can_restart_training")),
         last_seen_at=row["last_seen_at"],
         outlets=[
             OutletSummary(
@@ -372,6 +375,46 @@ async def set_pin(
         # Never record the PIN itself, only that it changed.
         before={"has_pin": target["has_pin"]},
         after={"has_pin": payload.pin is not None},
+        ip=ip,
+        user_agent=user_agent,
+    )
+    await db.commit()
+    return await get_one(db, profile_id)
+
+
+async def set_training_delegate(
+    db: AsyncSession,
+    user: CurrentUser,
+    profile_id: uuid.UUID,
+    payload: SetTrainingDelegateRequest,
+    *,
+    ip: str | None = None,
+    user_agent: str | None = None,
+) -> UserListItem:
+    """Let a manager restart other people's training (D31). The owner's to
+    give and take; the router already requires owner."""
+    target = await repository.get_user(db, profile_id)
+    if target is None:
+        raise NotFoundError("That person does not exist.")
+    role = UserRole(target["global_role"])
+    if role not in {UserRole.OPS_MANAGER, UserRole.OUTLET_MANAGER}:
+        raise ConflictError(
+            "Only an operations manager or outlet manager can be delegated training. "
+            "Owners already may; floor roles cannot administer people.",
+            extra={"their_role": role.value},
+        )
+    await db.execute(
+        text("update profiles set can_restart_training = :on where id = :id"),
+        {"on": payload.enabled, "id": profile_id},
+    )
+    await record(
+        db,
+        actor_profile_id=user.profile_id,
+        entity_table="profiles",
+        entity_id=profile_id,
+        action=AuditAction.UPDATE,
+        before={"can_restart_training": bool(target.get("can_restart_training"))},
+        after={"can_restart_training": payload.enabled},
         ip=ip,
         user_agent=user_agent,
     )

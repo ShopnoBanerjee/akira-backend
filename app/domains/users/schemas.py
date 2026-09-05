@@ -39,6 +39,8 @@ class MeResponse(BaseModel):
     #: True for owner and ops_manager, who reach every outlet.
     is_global: bool
     has_pin: bool
+    #: Owner-granted: may restart training for people at their outlets (D31).
+    can_restart_training: bool
     outlets: list[OutletSummary]
     device: DeviceSummary | None = None
 
@@ -69,6 +71,7 @@ class UserListItem(BaseModel):
     global_role: UserRole
     is_active: bool
     has_pin: bool
+    can_restart_training: bool
     last_seen_at: datetime | None
     outlets: list[OutletSummary]
 
@@ -120,6 +123,14 @@ class SetOutletsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     outlet_ids: list[uuid.UUID]
+
+
+class SetTrainingDelegateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: True lets this manager restart training for people at their outlets
+    #: (an ops manager: anywhere). Owner-only to change; ignored on floor roles.
+    enabled: bool
 
 
 class SetPinRequest(BaseModel):
