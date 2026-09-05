@@ -80,7 +80,9 @@ unprocessed — that is the rendering for corrupt bytes, not a bug to chase.
 **"AI review is missing on a photo."**
 Advisory by design — it never blocks. No key configured → recorded as a skip
 with a reason, not a failure. Check `AI_REVIEW_PROVIDER` matches the key that
-is actually set (`groq` ↔ `GROQ_API_KEY`, `anthropic` ↔ `ANTHROPIC_API_KEY`).
+is actually set (`anthropic` ↔ `ANTHROPIC_API_KEY`, `gemini` ↔ `GEMINI_API_KEY`,
+`openai` ↔ `OPENAI_COMPAT_API_KEY`, or `GEMINI_API_KEY` when the base URL is
+Gemini's). `uv run python scripts/check_provider_keys.py` says which resolve.
 
 **"Everything is slow."**
 Almost always the wire, not the database — the database answers in ~0.2 ms

@@ -1208,3 +1208,53 @@ Not done: altering `supabase_admin`'s default privileges — `postgres` is not
 allowed to, and nothing of ours is created by that role. Verified on Mumbai:
 `test_rls.py`'s catalog assertions pass by hand, and a throwaway table
 created after 0021 came up anon-nothing / authenticated-SELECT.
+
+---
+
+## D28 — One OpenAI-format client instead of a vendor per provider (P22)
+
+The owner asked for a zero-cost replacement for Groq that speaks the OpenAI
+format. Groq had two problems: its key reached this project through a chat
+transcript (OPEN_ITEMS carried "rotate it" for ten epics), and its free tier
+was 8,000 tokens a minute, which two photographs mostly exhaust. Its only
+virtue was that it spoke the OpenAI chat-completions format — and that
+turned out to be the whole answer.
+
+**Decision:** `AI_REVIEW_PROVIDER=openai` (and `STOCK_EXTRACT_PROVIDER=openai`)
+is ANY endpoint that speaks that format, chosen by `OPENAI_COMPAT_BASE_URL`.
+The default is Gemini's own compatibility layer,
+`https://generativelanguage.googleapis.com/v1beta/openai`, which reuses the
+`GEMINI_API_KEY` and `GEMINI_MODEL` already configured when the compat key
+and model are left blank — so the zero-cost path needs no new secret. The
+same code serves OpenRouter's `:free` models or a local Ollama, which costs
+nothing at all and sends the photos nowhere, by changing one URL and a key.
+
+**Why this and not just "use Gemini native":** the native Gemini path
+exists and stays; it is what the extractor was measured on. But one generic
+client is what makes the vendor a configuration value rather than a code
+path, and that is what the owner asked for. Strict `response_format:
+json_schema` is honoured by Gemini's layer (verified live, 5 Sep 2026:
+schema-exact JSON, `gemini-3-flash-preview` echoed, ~3.5 s) and by OpenRouter;
+an endpoint that ignores it fails the schema check and yields "no verdict",
+never a guessed one.
+
+**What stays true from D13:** one prompt, byte-identical across transports;
+the model that actually answered is stored on every verdict; a 429 is a
+first-class "no verdict yet", now retried twice with the endpoint's own
+`Retry-After` before giving up.
+
+**Trust for extraction is per endpoint, not per format.** Gemini through its
+compat layer is the same model that was measured to row-align handwriting
+correctly, so it is trusted like native Gemini. Any other OpenAI-compatible
+endpoint is unmeasured, and the one non-Gemini vision model that WAS measured
+shifted values onto neighbouring rows at 0.9 confidence; so
+`counts_service` forces every line from a non-Gemini endpoint into human
+review until `scripts/eval_extractor.py` says otherwise.
+
+Free-tier facts as of Sep 2026, for whoever tunes this next: Gemini 3 Flash
+about 1,500 requests/day and 10/minute on the free tier after Google's
+December 2025 cuts; OpenRouter `:free` 50 requests/day on an unfunded
+account, 1,000/day after a one-time $10 top-up; Ollama unlimited but needs
+a machine with the model on it, which the API host today does not have.
+Groq is gone from config, code and `.env`; the leaked key should still be
+revoked in Groq's console.

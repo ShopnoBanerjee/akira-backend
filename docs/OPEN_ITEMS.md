@@ -21,7 +21,8 @@ one, say what would unblock it, not just what is missing.
 ### The Anthropic vision path has never run
 
 `ANTHROPIC_API_KEY` is not set on the build machine, so `AI_REVIEW_PROVIDER` is
-`groq` (D13). The pipeline is proven end to end against a real model — a grimy
+`openai` — Gemini's free tier through its OpenAI-compatible layer (D28). The
+pipeline is proven end to end against a real model — a grimy
 sink judged against that outlet's own standard came back `fail` at confidence
 1.0, wrote its `run_item_ai_reviews` row, raised `ai_mismatch` and rendered on
 the review screen — but the line that has never executed is
@@ -32,12 +33,13 @@ untested is the Anthropic transport specifically.
 
 **Unblocked by:** setting `ANTHROPIC_API_KEY` in `akira-backend/.env` and
 flipping `AI_REVIEW_PROVIDER=anthropic`. Re-reviewing a photo then writes a
-*second* row rather than overwriting the Groq one — the table is keyed on
+*second* row rather than overwriting the existing one — the table is keyed on
 `(run_item_id, model, prompt_version)` — so the two verdicts can be compared
 side by side, which is worth doing once.
 
-**Also:** the Groq key currently in `.env` arrived through a chat transcript
-and should be rotated in the Groq console.
+**Also:** Groq is gone from the code and from `.env` (D28); the key that had
+leaked through a chat transcript should still be **revoked in the Groq
+console** — nothing here uses it, but it is live until someone does that.
 
 ### The daily digest does not send mail
 

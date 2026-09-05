@@ -12,11 +12,13 @@ test, or re-run against a newer model without touching the orchestration around
 it. `run_item_ai_reviews` records the model and prompt version behind every
 verdict for exactly that reason.
 
-Two providers, one prompt. Anthropic is the production path; Groq exists so the
-pipeline can be exercised end to end on a key that is easier to come by (D13).
-The system prompt and the question are byte-identical between them — only the
-transport differs — so a verdict means the same thing whichever answered, and
-the real model id lands in the row either way.
+Three transports, one prompt. Anthropic is the SDK path (D12); Gemini's native
+REST is the extractor's home; and `openai` is any endpoint that speaks the
+OpenAI chat-completions format — Gemini's own compatibility layer by default,
+OpenRouter or a local Ollama by changing one URL (D28). The system prompt and
+the question are byte-identical between them — only the transport differs — so
+a verdict means the same thing whichever answered, and the real model id lands
+in the row either way.
 """
 
 import base64
@@ -175,7 +177,7 @@ async def review(
     inventing a verdict — silence is not the same as `uncertain`."""
     settings = get_settings()
     ask = {
-        "groq": _review_groq,
+        "openai": _review_openai,
         "gemini": _review_gemini,
     }.get(settings.AI_REVIEW_PROVIDER, _review_anthropic)
     return await ask(
@@ -255,7 +257,7 @@ async def _review_anthropic(
 
 
 # ---------------------------------------------------------------------------
-# Groq — the testing path (D13)
+# Gemini — native REST (the extractor's transport, also usable for review)
 # ---------------------------------------------------------------------------
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -271,7 +273,7 @@ async def _review_gemini(
 ) -> ReviewResult:
     """Same system prompt, same question, Gemini transport. The free tier's
     daily quota covers an outlet's photo volume with room to spare, which is
-    what pushed review off the squeezed Groq tier."""
+    what made it the fallback when a squeezed free tier could not fit two photos."""
     import asyncio as _asyncio
 
     settings = get_settings()
@@ -345,12 +347,14 @@ async def _review_gemini(
     )
 
 
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+# ---------------------------------------------------------------------------
+# Any OpenAI-compatible endpoint (D28)
+# ---------------------------------------------------------------------------
 
-#: The same three fields VisionVerdict declares, as raw JSON Schema. Groq's
-#: OpenAI-compatible endpoint wants the schema inline rather than derived from
-#: a model class, and `strict` makes it a constraint rather than a suggestion.
-_GROQ_SCHEMA = {
+#: The same three fields VisionVerdict declares, as raw JSON Schema. The
+#: chat-completions format wants the schema inline rather than derived from a
+#: model class, and `strict` makes it a constraint rather than a suggestion.
+_VERDICT_SCHEMA = {
     "type": "object",
     "properties": {
         "verdict": {"type": "string", "enum": ["pass", "fail", "uncertain"]},
@@ -361,8 +365,17 @@ _GROQ_SCHEMA = {
     "additionalProperties": False,
 }
 
+#: Waits between attempts on 429/503, in seconds. A module constant so a test
+#: can zero it; Gemini's free tier is per-minute, so the second wait is the one
+#: that usually clears it.
+RETRY_DELAYS: tuple[float, ...] = (15.0, 45.0)
 
-def _groq_image(image_bytes: bytes) -> dict[str, Any]:
+
+def openai_endpoint(base_url: str) -> str:
+    return base_url.rstrip("/") + "/chat/completions"
+
+
+def _openai_image(image_bytes: bytes) -> dict[str, Any]:
     return {
         "type": "image_url",
         "image_url": {
@@ -372,7 +385,7 @@ def _groq_image(image_bytes: bytes) -> dict[str, Any]:
     }
 
 
-async def _review_groq(
+async def _review_openai(
     *,
     submitted: bytes,
     reference: bytes | None,
@@ -380,20 +393,32 @@ async def _review_groq(
     instruction: str | None,
     recorded_result: str,
 ) -> ReviewResult:
-    """Groq's OpenAI-compatible endpoint, over plain httpx.
+    """One POST to whatever `OPENAI_COMPAT_BASE_URL` names, over plain httpx.
 
-    No SDK: this is one POST, httpx is already a dependency, and pulling in a
-    second vendor client for a path that exists to prove the pipeline would
-    cost more than it saves.
+    No SDK: it is one request, httpx is already a dependency, and the point of
+    the format is that the vendor is a URL. With the default base URL this is
+    Gemini's free tier on the key already configured; the same code serves
+    OpenRouter's `:free` models or a local Ollama, which costs nothing at all
+    and sends the photos nowhere.
     """
-    settings = get_settings()
-    if not settings.GROQ_API_KEY:
-        raise VisionUnavailable("AI_REVIEW_PROVIDER is groq but GROQ_API_KEY is not configured.")
+    import asyncio as _asyncio
 
+    settings = get_settings()
+    key, model = settings.openai_compat_key, settings.openai_compat_model
+    if not key:
+        raise VisionUnavailable(
+            "AI_REVIEW_PROVIDER is openai but no key is configured: set "
+            "OPENAI_COMPAT_API_KEY (or GEMINI_API_KEY for the default Gemini endpoint)."
+        )
+    if not model:
+        raise VisionUnavailable("OPENAI_COMPAT_MODEL is not configured for this endpoint.")
+
+    # Reference first, submitted second — the prompt names them in that order,
+    # and swapping them silently inverts every comparison.
     content: list[dict[str, Any]] = []
     if reference is not None:
-        content.append(_groq_image(reference))
-    content.append(_groq_image(submitted))
+        content.append(_openai_image(reference))
+    content.append(_openai_image(submitted))
     content.append(
         {
             "type": "text",
@@ -405,63 +430,69 @@ async def _review_groq(
             ),
         }
     )
+    body = {
+        "model": model,
+        "temperature": 0,
+        "max_tokens": 1200,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "photo_verdict", "schema": _VERDICT_SCHEMA, "strict": True},
+        },
+        "messages": [
+            {"role": "system", "content": SYSTEM},
+            {"role": "user", "content": content},
+        ],
+    }
 
     started = time.monotonic()
     async with httpx.AsyncClient(timeout=90.0) as client:
-        response = await client.post(
-            GROQ_URL,
-            headers={"Authorization": f"Bearer {settings.GROQ_API_KEY}"},
-            json={
-                "model": settings.GROQ_VISION_MODEL,
-                "max_completion_tokens": 1200,
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "photo_verdict",
-                        "schema": _GROQ_SCHEMA,
-                        "strict": True,
-                    },
-                },
-                "messages": [
-                    {"role": "system", "content": SYSTEM},
-                    {"role": "user", "content": content},
-                ],
-            },
-        )
+        for attempt in range(len(RETRY_DELAYS) + 1):
+            response = await client.post(
+                openai_endpoint(settings.OPENAI_COMPAT_BASE_URL),
+                headers={"Authorization": f"Bearer {key}"},
+                json=body,
+            )
+            if response.status_code not in (429, 503) or attempt == len(RETRY_DELAYS):
+                break
+            wait = float(response.headers.get("retry-after") or RETRY_DELAYS[attempt])
+            await _asyncio.sleep(min(wait, 90))
 
     if response.status_code == 429:
-        # The free tier is 8000 tokens per minute and two photos is most of a
-        # request. A background job that hit the ceiling has not failed — it
-        # simply has no verdict yet, and saying so beats inventing one.
+        # A free tier is per-minute. A background job that hit the ceiling has
+        # not failed — it simply has no verdict yet, and saying so beats
+        # inventing one.
         raise VisionUnavailable(
-            f"Groq rate limit reached; no verdict this time. {_groq_error(response)}"
+            f"Provider rate limit reached; no verdict this time. {_provider_error(response)}"
         )
     if response.status_code >= 400:
-        raise VisionUnavailable(f"Groq returned {response.status_code}: {_groq_error(response)}")
+        raise VisionUnavailable(
+            f"Provider returned {response.status_code}: {_provider_error(response)}"
+        )
 
     payload = response.json()
     try:
         text_out = payload["choices"][0]["message"]["content"]
         parsed = VisionVerdict.model_validate_json(text_out)
-    except (KeyError, IndexError, ValueError) as exc:
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
         # strict json_schema should make this impossible. If it happens the
         # honest answer is no verdict, not a guess at what was meant.
-        raise VisionUnavailable(f"Groq returned nothing matching the schema: {exc}") from exc
+        raise VisionUnavailable(f"Provider returned nothing matching the schema: {exc}") from exc
 
     return ReviewResult(
         verdict=parsed.verdict,
         confidence=parsed.confidence,
         rationale=parsed.rationale.strip(),
         # The model that actually answered, not the one that was asked for.
-        model=str(payload.get("model") or settings.GROQ_VISION_MODEL),
+        model=str(payload.get("model") or model),
         prompt_version=PROMPT_VERSION,
         latency_ms=int((time.monotonic() - started) * 1000),
         compared_to_reference=reference is not None,
     )
 
 
-def _groq_error(response: "httpx.Response") -> str:
+def _provider_error(response: "httpx.Response") -> str:
     try:
-        return str(response.json().get("error", {}).get("message", ""))[:300]
+        err = response.json().get("error", {})
+        return str(err.get("message", err) if isinstance(err, dict) else err)[:300]
     except ValueError:
         return response.text[:300]

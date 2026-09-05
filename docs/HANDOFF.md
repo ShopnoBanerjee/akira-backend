@@ -149,7 +149,7 @@ mistake until you know why:
 | **D11** | **Template item versioning.** Any material item edit bumps `checklist_templates.version` AND snapshots every item into `checklist_template_item_versions`, in one transaction. Runs point at the exact version they were answered against, so an admin flipping `is_critical` today cannot retroactively make past runs look like critical failures. |
 | **D15** | **Sales is orders only, and the uploader picks the outlet.** No Petpooja item export carries a bill number — all four were checked — so `sales_order_items` cannot be filled and is deliberately left empty. Idempotency is on the file's bytes, not its name. Overlapping exports upsert. Written set-at-a-time: the per-row loop took 75s for 452 bills, the `unnest` upsert takes 5.4s. |
 | **D14** | **No blended health score yet.** Spec section 5's four pillars sum to 100; Stage 1 has one of them. The SOP score is the headline and the other three are greyed — `0.30 x SOP` would read as 27/100 for a perfect outlet, and rescaling would make the number jump the day a second pillar lands. Also: a component with no denominator contributes 0 rather than being re-weighted out; nothing scheduled is *no score*, not zero; the critical-failure cap holds the BAND at amber and leaves the number honest. |
-| **D13** | **A second vision provider, testing only.** `AI_REVIEW_PROVIDER` picks `anthropic` (default, production) or `groq`. Same prompt, same question, different transport; the model that actually answered is stored on every verdict. Groq's only image-capable model is `qwen/qwen3.8-27b` and its free tier is 8000 TPM, which two photos exhaust — so a 429 is a first-class "no verdict". |
+| **D13** | **A second vision provider, testing only.** `AI_REVIEW_PROVIDER` picks the transport; same prompt, same question, and the model that actually answered is stored on every verdict, so a 429 is a first-class "no verdict". The Groq transport this introduced was replaced by the generic OpenAI-format client in **D28**. |
 | **D12** | **What P7 decided for itself.** Six rules, each of which looks arbitrary until you know why: a flag carries its evidence (`integrity_detail`); run-level flags live on the run, not stamped onto each photo; each pass clears only its own flags; `mark_missed` never touches `in_progress`; the AI confidence threshold is applied at READ time and `ai_mismatch` fires in one direction only; notifications degrade **loudly**. Vision model is `claude-sonnet-5` by the owner's decision. |
 
 ---
@@ -178,8 +178,8 @@ P7 added, all optional and all documented in `.env.example`:
 | `SMTP_HOST` / `_PORT` / `_USERNAME` / `_PASSWORD` / `_FROM` / `_STARTTLS` | Unset, so the digest degrades to logging and says so. |
 | `ANTHROPIC_API_KEY` | **Not set.** Without it the AI review records a skip rather than a verdict. |
 | `AI_REVIEW_MODEL` | `claude-sonnet-5` (D12). |
-| `AI_REVIEW_PROVIDER` | `anthropic` by default. Set to `groq` to test without an Anthropic key (D13). |
-| `GROQ_API_KEY` / `GROQ_VISION_MODEL` | Currently set to a Groq key **that must be rotated** — it was pasted into a chat transcript. Model `qwen/qwen3.8-27b`. |
+| `AI_REVIEW_PROVIDER` | `anthropic` by default; **`openai` on this machine** — any OpenAI-format endpoint, Gemini's free compatibility layer by default (D28). |
+| `OPENAI_COMPAT_BASE_URL` / `_API_KEY` / `_MODEL` | Blank key and model reuse `GEMINI_API_KEY` / `GEMINI_MODEL` when the base URL is Gemini's. Point the URL at OpenRouter or a local Ollama to change vendor without code. Groq is gone; its leaked key should still be revoked in Groq's console. |
 
 `akira-frontend/.env.local` holds the two `VITE_SUPABASE_*` values (both
 browser-safe) and `VITE_API_BASE_URL`.
@@ -334,8 +334,8 @@ DEV02, both caught), 97 late runs with real integrity flags, exceptions in
 every state, and synthetic-but-labelled DEV02 sales beside NT01's REAL
 Petpooja data (467 bills through 27 Aug, whose export's own Total matches
 our parse to the paisa — `reported_net_paise` = `parsed_net_paise`). Business
-date 2026-08-27 carries genuine artifacts: real photos and the two real Groq
-verdicts. The old caveats (stub photos, hand-materialised dates) were wiped
+date 2026-08-27 carries genuine artifacts: the two real model verdicts (the
+photos themselves were lost with the Sydney bucket, P21). The old caveats (stub photos, hand-materialised dates) were wiped
 with the reseed. To rebuild: the script is deterministic — read its docstring,
 rehearse locally first.
 
@@ -526,8 +526,8 @@ against the photograph it was actually compared to. New Town has **1 of 18**
 captured; every other outlet has none. That is the real remaining work here,
 and it is physical — somebody has to walk the outlet under service lighting.
 
-**The pipeline is proven end to end against a real model — via Groq, not
-Anthropic** (D13). New Town has `ai_review.enabled` **on**; every other outlet
+**The pipeline is proven end to end against a real model — via Gemini's
+OpenAI-compatible layer (D28), originally via Groq (D13), not Anthropic.** New Town has `ai_review.enabled` **on**; every other outlet
 is off. What was verified on live data: a grimy sink photo against that
 outlet's own clean standard came back `fail` at confidence 1.0 with the
 rationale *"Surface is covered with scattered dark debris and a large liquid
@@ -541,10 +541,11 @@ as a pass, and rendered on the review screen. Turning the setting off produced
 identical for both providers and is proven; what has never run is
 `client.messages.parse`. To finish it: set the key, set
 `AI_REVIEW_PROVIDER=anthropic`, and re-review a photo — it will write a second
-row rather than overwrite the Groq one, because the table is keyed on the model.
+row rather than overwrite the existing one, because the table is keyed on the model.
 
-**Rotate the Groq key in `.env`.** It reached this project through a chat
-transcript.
+**Revoke the old Groq key in Groq's console.** It reached this project through
+a chat transcript; it is out of `.env` and out of the code (D28), but live
+until revoked.
 
 This gap, the digest's missing mail server and the uncaptured reference
 standards are all tracked with their unblockers in `docs/OPEN_ITEMS.md`.
@@ -585,8 +586,9 @@ gaps and says what unblocks each. As of P20 the live blockers are:
 - **Reference standards are barely captured.** The AI photo review (D6/D13)
   compares against per-outlet reference shots that mostly have not been taken.
   Someone has to walk New Town with the tablet.
-- **No `ANTHROPIC_API_KEY`.** The vision path runs on Groq and extraction on
-  Gemini (D18); `client.messages.parse` has still never executed.
+- **No `ANTHROPIC_API_KEY`.** The vision path runs on Gemini through its
+  OpenAI-compatible layer (D28) and extraction on Gemini natively (D18);
+  `client.messages.parse` has still never executed.
 - **The digest does not send mail.** No SMTP host, so it degrades to logging
   and records `smtp_not_configured`. Deliberate until there is a mailbox.
 

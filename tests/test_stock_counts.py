@@ -1,7 +1,7 @@
 """The count flow against a real database, with the model call stubbed.
 
 What must hold: extraction lands raw text verbatim and derives beside it; a
-Groq-extracted line is always review-bound; the human's correction writes an
+line from an unmeasured endpoint is always review-bound; the human's correction writes an
 alias exactly when asked; a half-reviewed count refuses to confirm; and the
 requisition computes only from a confirmed count, arithmetic attached.
 """

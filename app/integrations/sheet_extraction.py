@@ -15,15 +15,18 @@ Providers, one contract, chosen by measurement against the real 27 Aug sheet:
   non-discriminating, so the review gate leans on the PARSER's refusals
   (compounds, unit mismatches) rather than the model's self-assessment.
 - **anthropic**: kept wired; unfunded for now (budget), so unexercised.
-- **groq**: the measured failure — values shifted onto neighbouring rows at
-  0.9 confidence. Plumbing-test fallback only; everything it produces is
-  forced into review (see counts_service).
+- **openai**: the same question over any OpenAI-compatible endpoint (D28) —
+  Gemini's own compatibility layer by default, OpenRouter or a local Ollama
+  by URL. Everything it produces is forced into review unless the endpoint is
+  Gemini's (see counts_service): the one non-Gemini model measured on the
+  real sheet shifted handwritten values onto neighbouring rows at 0.9
+  confidence, which is the silent failure this pipeline exists to catch.
 - **stub**: replays a committed fixture, so the whole pipeline runs in CI and
   local dev with no key and no network.
 
 The sheets are printed FROM the catalogue, so the prompt carries the
-catalogue's item vocabulary. That anchors printed-name transcription (the
-Groq experiments hallucinated "Broccoli" for Bokchoy without it) while the
+catalogue's item vocabulary. That anchors printed-name transcription (early
+experiments hallucinated "Broccoli" for Bokchoy without it) while the
 handwriting is still transcribed verbatim.
 """
 
@@ -40,7 +43,7 @@ from anthropic.types import Base64ImageSourceParam, ImageBlockParam, TextBlockPa
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
-from app.integrations.vision import GROQ_URL, VisionUnavailable, _media_type
+from app.integrations.vision import RETRY_DELAYS, VisionUnavailable, _media_type, openai_endpoint
 
 logger = logging.getLogger(__name__)
 
@@ -144,8 +147,8 @@ async def extract_page(
     settings = get_settings()
     if settings.STOCK_EXTRACT_PROVIDER == "gemini":
         return await _extract_gemini(image_bytes, vocabulary=vocabulary)
-    if settings.STOCK_EXTRACT_PROVIDER == "groq":
-        return await _extract_groq(image_bytes, vocabulary=vocabulary)
+    if settings.STOCK_EXTRACT_PROVIDER == "openai":
+        return await _extract_openai(image_bytes, vocabulary=vocabulary)
     if settings.STOCK_EXTRACT_PROVIDER == "stub":
         return _extract_stub()
     return await _extract_anthropic(image_bytes, vocabulary=vocabulary)
@@ -301,75 +304,81 @@ def _extract_stub() -> PageResult:
     )
 
 
-async def _extract_groq(image_bytes: bytes, *, vocabulary: list[str]) -> PageResult:
-    """The plumbing-test path. Measured on the real sheet: names anchor well,
-    handwritten values land on wrong rows with high confidence — so the
-    caller treats every Groq row as needing review regardless of what the
-    confidence claims."""
-    settings = get_settings()
-    if not settings.GROQ_API_KEY:
-        raise VisionUnavailable("GROQ_API_KEY is not configured.")
+async def _extract_openai(image_bytes: bytes, *, vocabulary: list[str]) -> PageResult:
+    """The same transcription over any OpenAI-compatible endpoint (D28).
 
-    schema_hint = (
-        'Return ONLY JSON: {"sheet_date": "YYYY-MM-DD or null", '
-        '"counted_at_label": "verbatim or null", '
-        '"rows": [{"sl_no": 1, "item_name": "...", "closing_count_raw": "... or null", '
-        '"requisition_raw": "... or null", "confidence": 0.0}]}'
-    )
+    Strict JSON schema, the same one Gemini's native path is constrained to.
+    Retries on 429/503 the same way, because a free tier is per-minute and a
+    multi-page sheet WILL cross a minute boundary.
+    """
+    settings = get_settings()
+    key, model = settings.openai_compat_key, settings.openai_compat_model
+    if not key:
+        raise VisionUnavailable(
+            "STOCK_EXTRACT_PROVIDER is openai but no key is configured: set "
+            "OPENAI_COMPAT_API_KEY (or GEMINI_API_KEY for the default Gemini endpoint)."
+        )
+    if not model:
+        raise VisionUnavailable("OPENAI_COMPAT_MODEL is not configured for this endpoint.")
+
     body: dict[str, Any] = {
-        "model": settings.GROQ_VISION_MODEL,
+        "model": model,
+        "temperature": 0,
+        "max_tokens": 4000,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "stock_sheet_page",
+                "schema": ExtractedPage.model_json_schema(),
+                "strict": True,
+            },
+        },
         "messages": [
             {"role": "system", "content": SYSTEM},
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": build_prompt(vocabulary) + "\n\n" + schema_hint},
+                    {"type": "text", "text": build_prompt(vocabulary)},
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": "data:image/jpeg;base64,"
+                            "url": f"data:{_media_type(image_bytes)};base64,"
                             + base64.b64encode(image_bytes).decode()
                         },
                     },
                 ],
             },
         ],
-        "temperature": 0,
-        # The free tier pre-checks prompt + max_tokens against its 8k
-        # tokens-per-minute ceiling and answers 413 when the SUM exceeds it —
-        # a page image is ~2k prompt tokens, so the output budget has to leave
-        # room. A 30-row page measured ~1.7k completion tokens; 4000 is head
-        # room without tripping the gate.
-        "max_tokens": 4000,
-        "response_format": {"type": "json_object"},
     }
     started = time.monotonic()
     async with httpx.AsyncClient(timeout=180) as client:
-        # The free tier is 8k tokens/min and one page is most of that, so a
-        # multi-page sheet WILL hit 429 between pages. Waiting it out is the
-        # whole retry policy; anything cleverer belongs on the paid tier.
-        for attempt in range(4):
+        for attempt in range(len(RETRY_DELAYS) + 1):
             response = await client.post(
-                GROQ_URL,
-                headers={"Authorization": f"Bearer {settings.GROQ_API_KEY}"},
+                openai_endpoint(settings.OPENAI_COMPAT_BASE_URL),
+                headers={"Authorization": f"Bearer {key}"},
                 json=body,
             )
-            if response.status_code != 429:
+            if response.status_code not in (429, 503) or attempt == len(RETRY_DELAYS):
                 break
-            retry_after = float(response.headers.get("retry-after", 25))
-            logger.info("groq rate limited; waiting %.0fs (attempt %d)", retry_after, attempt + 1)
-            await asyncio.sleep(min(retry_after + 1, 90))
+            wait = float(response.headers.get("retry-after") or RETRY_DELAYS[attempt])
+            logger.info(
+                "provider %s; waiting %.0fs (attempt %d)", response.status_code, wait, attempt + 1
+            )
+            await asyncio.sleep(min(wait, 90))
     if response.status_code != 200:
         raise VisionUnavailable(
-            f"Groq refused the extraction: {response.status_code} {response.text[:200]}"
+            f"Provider refused the extraction: {response.status_code} {response.text[:200]}"
         )
     latency = int((time.monotonic() - started) * 1000)
     payload = response.json()
-    content = payload["choices"][0]["message"]["content"]
+    try:
+        content = payload["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise VisionUnavailable(f"Provider returned no transcription: {exc}") from exc
     page = ExtractedPage.model_validate_json(content)
     return PageResult(
         page=page,
-        model=str(payload.get("model") or settings.GROQ_VISION_MODEL),
+        model=str(payload.get("model") or model),
         extractor_version=EXTRACTOR_VERSION,
         latency_ms=latency,
     )

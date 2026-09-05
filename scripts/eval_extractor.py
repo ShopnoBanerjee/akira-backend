@@ -1,7 +1,7 @@
 """Score an extraction provider against the hand-labelled golden set.
 
     uv run python scripts/eval_extractor.py gemini
-    uv run python scripts/eval_extractor.py groq gemini      # head to head
+    uv run python scripts/eval_extractor.py openai gemini    # head to head
 
 Why this exists: provider choices in this codebase are made by measurement,
 not preference (D17), and this script is where the measurement lives. It runs
@@ -15,7 +15,7 @@ Three numbers per provider, and what they mean:
 - cell accuracy   — of the 60 handwritten cells, how many were transcribed
                     to an accepted reading. The headline.
 - row integrity   — cells whose WRONG value is another row's RIGHT value.
-                    This is the silent-corruption failure (Groq's measured
+                    This is the silent-corruption failure (one provider's measured
                     mode); a provider can have decent cell accuracy and still
                     be unusable if its errors are neighbours' values.
 - blank fidelity  — blanks read as blanks. An invented number on an

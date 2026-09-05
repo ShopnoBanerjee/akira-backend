@@ -9,9 +9,10 @@ The flow, and who owns each step (spec section 6):
     confirmed count     ->  the outlet's on-hand truth             [human]
 
 Everything the model touches lands in raw_* columns and is re-derivable; the
-derived columns record who or what derived them. A Groq-extracted line is
-ALWAYS needs_review regardless of its claimed confidence, because the measured
-failure mode (values shifted one row at 0.9 confidence) is invisible to any
+derived columns record who or what derived them. A line from a non-Gemini
+OpenAI-compatible endpoint is ALWAYS needs_review regardless of its claimed
+confidence, because the measured failure mode (values shifted one row at 0.9
+confidence) is invisible to any
 threshold — see sheet_extraction.py.
 
 Extraction runs as a background job bracketed by job_runs, like every other
@@ -52,14 +53,14 @@ ACCEPTED_TYPES = {
 }
 
 #: Below this extraction confidence a line needs a human even from the
-#: production extractor. Groq lines need one unconditionally.
+#: production extractor. Lines from an unmeasured endpoint need one unconditionally.
 REVIEW_BELOW = 0.85
 
 #: Long side of the page image sent to the model. The full-resolution scans
 #: are ~2500px; this keeps tokens sane without losing the handwriting.
 PAGE_LONG_SIDE = 1800
 
-#: Hard byte budget per page image. Groq's request cap answered 413 above
+#: Hard byte budget per page image. One provider's request cap answered 413 above
 #: roughly this; Anthropic's limit is far higher, but one budget keeps the
 #: pipeline provider-agnostic.
 PAGE_MAX_BYTES = 300_000
@@ -217,7 +218,7 @@ def _page_images(data: bytes, content_type: str) -> list[bytes]:
         if img.width < img.height:
             img = img.transpose(Image.Transpose.ROTATE_90)
         img.thumbnail((PAGE_LONG_SIDE, PAGE_LONG_SIDE))
-        # Providers cap request size (Groq answered 413 to a dense scan at
+        # Providers cap request size (one answered 413 to a dense scan at
         # quality 88). Step quality, then resolution, until the page fits —
         # legibility of handwriting degrades gracefully; a refused request
         # reads nothing at all.
@@ -298,12 +299,17 @@ async def extract_count(db: AsyncSession, count_id: uuid.UUID) -> dict[str, Any]
 
     from app.core.config import get_settings
 
-    # Trust is per provider, set by measurement (see sheet_extraction.py):
-    # groq shifts rows silently, so everything it says is review-bound. The
-    # others are gated by what the PARSER refused plus low extraction
-    # confidence — gemini reports a flat confidence, so its gate is
-    # effectively the parser, which is the deterministic one anyway.
-    force_review = get_settings().STOCK_EXTRACT_PROVIDER == "groq"
+    # Trust is per provider, set by measurement (see sheet_extraction.py).
+    # Gemini — natively or through its OpenAI-compatible layer — is the one
+    # measured to row-align correctly, so its lines are gated by what the
+    # PARSER refused plus low confidence. Any other OpenAI-compatible endpoint
+    # is unmeasured: the one that was measured shifted rows silently, so
+    # everything such an endpoint says is review-bound until it earns
+    # otherwise in scripts/eval_extractor.py.
+    settings = get_settings()
+    force_review = (
+        settings.STOCK_EXTRACT_PROVIDER == "openai" and not settings.openai_compat_is_gemini
+    )
 
     inserted = 0
     needs_review_count = 0

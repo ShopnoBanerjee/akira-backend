@@ -74,23 +74,26 @@ class Settings(BaseSettings):
     # one later is additive rather than a rewrite.
     AI_REVIEW_MODEL: str = "claude-sonnet-5"
 
-    # Which vendor answers. Anthropic is the production path; groq exists so
-    # the pipeline can be exercised end to end on a key that is easier to come
-    # by (D13). The prompt is identical either way and the actual model id is
-    # recorded on every verdict, so the two never get confused for each other.
-    AI_REVIEW_PROVIDER: Literal["anthropic", "gemini", "groq"] = "anthropic"
-    GROQ_API_KEY: str = ""
+    # Which transport answers. The prompt is identical whichever it is and the
+    # actual model id is recorded on every verdict, so they never get confused
+    # for each other.
+    #   anthropic — the Claude SDK (D12); needs ANTHROPIC_API_KEY.
+    #   gemini    — Gemini's native REST API; needs GEMINI_API_KEY.
+    #   openai    — ANY endpoint speaking the OpenAI chat-completions format
+    #               (D28): Gemini's compatibility layer by default, or
+    #               OpenRouter, or a local Ollama, chosen by base URL alone.
+    #               This replaced Groq, whose key had leaked and whose free
+    #               tier was too tight for two photos a request.
+    AI_REVIEW_PROVIDER: Literal["anthropic", "gemini", "openai"] = "anthropic"
 
     # --- Stage 2: stock sheet extraction -------------------------------------
-    # Anthropic is the production extractor: row-aligning handwriting is the
-    # visual task where the Groq fallback measurably fails (values shift onto
-    # neighbouring rows at high confidence). groq stays usable for exercising
-    # the pipeline; everything it extracts is forced into human review.
     # gemini is the production extractor: measured on the real sheet it
-    # row-aligns correctly (the Groq failure) and preserves handwriting
-    # verbatim, and the free tier covers a single outlet ~60x over. stub
-    # replays a fixture so the pipeline is testable with no key at all.
-    STOCK_EXTRACT_PROVIDER: Literal["anthropic", "gemini", "groq", "stub"] = "gemini"
+    # row-aligns handwriting correctly and preserves it verbatim, and the
+    # free tier covers a single outlet many times over. openai is the same
+    # question over any OpenAI-compatible endpoint (D28); everything it
+    # extracts is forced into human review unless the endpoint is Gemini's
+    # own. stub replays a fixture so the pipeline is testable with no key.
+    STOCK_EXTRACT_PROVIDER: Literal["anthropic", "gemini", "openai", "stub"] = "gemini"
     STOCK_EXTRACT_MODEL: str = "claude-opus-5"
 
     # --- Google AI (Gemini) --------------------------------------------------
@@ -99,9 +102,33 @@ class Settings(BaseSettings):
     #: was measured on. Pinned rather than -latest so a silent model swap
     #: cannot change extraction behaviour under us.
     GEMINI_MODEL: str = "gemini-3-flash-preview"
-    #: The only image-capable model on Groq's roster, confirmed by asking each
-    #: candidate to describe a picture rather than by reading a table.
-    GROQ_VISION_MODEL: str = "qwen/qwen3.8-27b"
+
+    # --- Any OpenAI-compatible endpoint (D28) --------------------------------
+    # One client, many vendors. Gemini's compatibility layer is the default
+    # because the key is already here and the free tier is the widest; point
+    # the base URL at OpenRouter (https://openrouter.ai/api/v1) or a local
+    # Ollama (http://localhost:11434/v1) and nothing else changes. When the
+    # key or model is left blank and the base URL is Gemini's, the Gemini
+    # settings above are used, so the common case needs no new secrets.
+    OPENAI_COMPAT_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+    OPENAI_COMPAT_API_KEY: str = ""
+    OPENAI_COMPAT_MODEL: str = ""
+
+    @property
+    def openai_compat_is_gemini(self) -> bool:
+        return "generativelanguage.googleapis.com" in self.OPENAI_COMPAT_BASE_URL
+
+    @property
+    def openai_compat_key(self) -> str:
+        if self.OPENAI_COMPAT_API_KEY:
+            return self.OPENAI_COMPAT_API_KEY
+        return self.GEMINI_API_KEY if self.openai_compat_is_gemini else ""
+
+    @property
+    def openai_compat_model(self) -> str:
+        if self.OPENAI_COMPAT_MODEL:
+            return self.OPENAI_COMPAT_MODEL
+        return self.GEMINI_MODEL if self.openai_compat_is_gemini else ""
 
 
 @lru_cache

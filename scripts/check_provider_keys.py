@@ -38,17 +38,19 @@ def redact(value: str) -> str:
     return f"{value[:4]}... len={len(value)}"
 
 
-def check_groq(key: str) -> tuple[bool, str]:
+def check_openai_compat(key: str, base_url: str) -> tuple[bool, str]:
+    """Any OpenAI-compatible endpoint (D28): GET {base}/models with the key."""
     r = httpx.get(
-        "https://api.groq.com/openai/v1/models",
+        base_url.rstrip("/") + "/models",
         headers={"Authorization": f"Bearer {key}"},
         timeout=20,
     )
     if r.status_code == 200:
-        return True, f"accepted ({len(r.json().get('data', []))} models visible)"
+        n = len(r.json().get("data", []))
+        return True, f"accepted ({n} models visible at {base_url})"
     if r.status_code in (401, 403):
-        return False, "REJECTED — the key is wrong, revoked, or not yet active"
-    return False, f"unexpected HTTP {r.status_code}"
+        return False, f"REJECTED by {base_url} — the key is wrong, revoked, or not active"
+    return False, f"unexpected HTTP {r.status_code} from {base_url}"
 
 
 def check_gemini(key: str) -> tuple[bool, str]:
@@ -78,11 +80,12 @@ def check_anthropic(key: str) -> tuple[bool, str]:
 
 
 CHECKS = {
-    "GROQ_API_KEY": check_groq,
     "GEMINI_API_KEY": check_gemini,
     "GOOGLE_API_KEY": check_gemini,
     "ANTHROPIC_API_KEY": check_anthropic,
 }
+
+GEMINI_OPENAI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
 
 
 def main() -> int:
@@ -91,6 +94,24 @@ def main() -> int:
     checked = 0
 
     print("Provider keys (values never printed):\n")
+    # The OpenAI-compatible endpoint resolves its key the way the app does:
+    # its own key, else the Gemini key when the base URL is Gemini's.
+    base = env.get("OPENAI_COMPAT_BASE_URL") or GEMINI_OPENAI_BASE
+    compat_key = env.get("OPENAI_COMPAT_API_KEY") or (
+        env.get("GEMINI_API_KEY", "") if "generativelanguage.googleapis.com" in base else ""
+    )
+    label = "OPENAI_COMPAT (resolved)"
+    if compat_key:
+        checked += 1
+        try:
+            ok, detail = check_openai_compat(compat_key, base)
+        except httpx.HTTPError as exc:
+            ok, detail = False, f"could not reach the endpoint: {type(exc).__name__}"
+        mark = "OK  " if ok else "FAIL"
+        print(f"  {label:<24} {redact(compat_key):<24} {mark}  {detail}")
+        any_failure |= not ok
+    else:
+        print(f"  {label:<24} {'(no key resolves)':<24} skipped")
     for name, check in CHECKS.items():
         value = env.get(name, "")
         if not value:

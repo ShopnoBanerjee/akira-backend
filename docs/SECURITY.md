@@ -70,8 +70,9 @@ publishable key leaks or a future feature reads Supabase directly.
 - **No general API rate limiting.** The PIN flow has its own lockout (#7); the
   rest relies on Supabase Auth's own limits and the small user population of an
   internal tool. Add a gateway limit before any public exposure.
-- **The Groq key must be rotated.** It reached the project through a chat
-  transcript (OPEN_ITEMS). The control that failed was human, not code.
+- **The old Groq key must be revoked in Groq's console.** It reached the
+  project through a chat transcript; Groq is out of the code and `.env` (D28),
+  but the key is live until revoked. The control that failed was human.
 - **`PHONE_HASH_SALT` has a dev default.** Production must set it; the default
   is deliberately labelled `dev-only-not-a-secret` so a missed override is
   visible in any config dump. Rotating it orphans existing hashes — that is

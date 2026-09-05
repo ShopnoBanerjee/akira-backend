@@ -9,7 +9,7 @@ a day invented after the fact, and six of 08-26's photos are 262-byte stubs
 that can never decode. OPEN_ITEMS said replace it wholesale, and this does.
 
 What it deliberately KEEPS: business date 2026-08-27 — the real runs, the real
-photos, and the two genuine Groq verdicts on them. Synthetic history should
+photos, and the two genuine model verdicts on them. Synthetic history should
 surround the real artifacts, not bury them.
 
 How it stays honest:
