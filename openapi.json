@@ -2975,6 +2975,127 @@
         }
       }
     },
+    "/sales/menu-items": {
+      "get": {
+        "tags": [
+          "sales"
+        ],
+        "summary": "The menu map, with the bill spellings that point at each item",
+        "description": "Brand-level: one menu across outlets (D29). Empty until an Item Wise\nreport has been uploaded.",
+        "operationId": "menu_items_sales_menu_items_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MenuItemRow"
+                  },
+                  "type": "array",
+                  "title": "Response Menu Items Sales Menu Items Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/sales/menu-items/aliases": {
+      "post": {
+        "tags": [
+          "sales"
+        ],
+        "summary": "Teach the menu map a spelling bills use",
+        "description": "One spelling maps to exactly one item, case-insensitively, forever.\nAdmin-level because it changes how every outlet's bills are read.",
+        "operationId": "add_menu_alias_sales_menu_items_aliases_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddMenuAliasRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Add Menu Alias Sales Menu Items Aliases Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/sales/menu-items/aliases/{alias_id}": {
+      "delete": {
+        "tags": [
+          "sales"
+        ],
+        "summary": "Forget a bill spelling",
+        "operationId": "delete_menu_alias_sales_menu_items_aliases__alias_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "alias_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Alias Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/sales/menu-mix": {
       "get": {
         "tags": [
@@ -5716,6 +5837,29 @@
   },
   "components": {
     "schemas": {
+      "AddMenuAliasRequest": {
+        "properties": {
+          "alias": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Alias"
+          },
+          "menu_item_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Menu Item Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "alias",
+          "menu_item_name"
+        ],
+        "title": "AddMenuAliasRequest"
+      },
       "AnswerItemRequest": {
         "properties": {
           "result": {
@@ -7519,6 +7663,69 @@
           "outlets"
         ],
         "title": "MeResponse"
+      },
+      "MenuAlias": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "alias": {
+            "type": "string",
+            "title": "Alias"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "alias"
+        ],
+        "title": "MenuAlias"
+      },
+      "MenuItemRow": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "petpooja_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Petpooja Code"
+          },
+          "aliases": {
+            "items": {
+              "$ref": "#/components/schemas/MenuAlias"
+            },
+            "type": "array",
+            "title": "Aliases"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "category",
+          "petpooja_code",
+          "aliases"
+        ],
+        "title": "MenuItemRow"
       },
       "MenuMixCategory": {
         "properties": {

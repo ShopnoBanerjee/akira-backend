@@ -9,14 +9,24 @@ import uuid
 from datetime import date, datetime, timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 
 from app.core.audit import record
 from app.core.business_date import business_date as to_business_date
 from app.core.business_date import outlet_now
-from app.core.deps import CurrentUserDep, DbDep, require_management
+from app.core.deps import CurrentUserDep, DbDep, require_admin, require_management
 from app.core.enums import AuditAction
 from app.core.errors import ForbiddenError, NotFoundError
 from app.domains.sales import forecast_service, service
@@ -285,6 +295,68 @@ async def items(
         db, user, outlet_id=outlet_id, date_from=date_from, date_to=date_to
     )
     return [ItemSummaryRow(**r) for r in rows]
+
+
+class MenuAlias(BaseModel):
+    id: uuid.UUID
+    alias: str
+
+
+class MenuItemRow(BaseModel):
+    id: uuid.UUID
+    name: str
+    category: str
+    petpooja_code: str | None
+    aliases: list[MenuAlias]
+
+
+class AddMenuAliasRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: The name as a bill prints it.
+    alias: Annotated[str, Field(min_length=1, max_length=120)]
+    #: The menu item it means, by its Item Wise name (case-insensitive).
+    menu_item_name: Annotated[str, Field(min_length=1, max_length=120)]
+
+
+@router.get(
+    "/menu-items",
+    response_model=list[MenuItemRow],
+    dependencies=[Depends(require_management)],
+    summary="The menu map, with the bill spellings that point at each item",
+)
+async def menu_items(db: DbDep) -> list[MenuItemRow]:
+    """Brand-level: one menu across outlets (D29). Empty until an Item Wise
+    report has been uploaded."""
+    return [MenuItemRow(**r) for r in await service.list_menu_items(db)]
+
+
+@router.post(
+    "/menu-items/aliases",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
+    summary="Teach the menu map a spelling bills use",
+)
+async def add_menu_alias(
+    payload: AddMenuAliasRequest, request: Request, db: DbDep, user: CurrentUserDep
+) -> dict[str, Any]:
+    """One spelling maps to exactly one item, case-insensitively, forever.
+    Admin-level because it changes how every outlet's bills are read."""
+    return await service.add_menu_alias(
+        db, user, alias=payload.alias, menu_item_name=payload.menu_item_name, **_ctx(request)
+    )
+
+
+@router.delete(
+    "/menu-items/aliases/{alias_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin)],
+    summary="Forget a bill spelling",
+)
+async def delete_menu_alias(
+    alias_id: uuid.UUID, request: Request, db: DbDep, user: CurrentUserDep
+) -> None:
+    await service.delete_menu_alias(db, user, alias_id, **_ctx(request))
 
 
 class MenuMixCategory(BaseModel):

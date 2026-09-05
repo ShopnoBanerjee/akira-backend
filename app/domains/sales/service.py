@@ -28,6 +28,7 @@ path to it. Only the salted digest ever reaches a database column.
 """
 
 import hashlib
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import date
@@ -1119,10 +1120,15 @@ async def menu_mix(
                        and exists (select 1 from sales_order_items i where i.order_id = o.id)
                 ),
                 cat as (
+                    -- The printed name is the menu name, or an alias of one
+                    -- (case-insensitive). Either way the category is the
+                    -- menu item's.
                     select i.order_id, m.category
                       from sales_order_items i
                       join bills b on b.id = i.order_id
-                      join menu_items m on m.name = i.item_name
+                      left join menu_items direct on direct.name = i.item_name
+                      left join menu_item_aliases a on lower(a.alias) = lower(i.item_name)
+                      join menu_items m on m.id = coalesce(direct.id, a.menu_item_id)
                 )
                 select category,
                        count(distinct order_id) as bills_with,
@@ -1150,6 +1156,10 @@ async def menu_mix(
                       join sales_orders o on o.id = i.order_id
                      where o.outlet_id = :o
                        and not exists (select 1 from menu_items m where m.name = i.item_name)
+                       and not exists (
+                           select 1 from menu_item_aliases a
+                            where lower(a.alias) = lower(i.item_name)
+                       )
                      order by 1
                     """
                 ),
@@ -1180,6 +1190,158 @@ async def menu_mix(
         "reported": reported,
         "measured": measured,
     }
+
+
+async def list_menu_items(db: AsyncSession) -> list[dict[str, Any]]:
+    """The menu map with its aliases, for the alias editor and the unmapped
+    list's dropdown. Brand-level, so no outlet filter."""
+    rows = (
+        await db.execute(
+            text(
+                """
+                select m.id, m.name, m.category, m.petpooja_code,
+                       coalesce(
+                           json_agg(json_build_object('id', a.id, 'alias', a.alias)
+                                    order by a.alias)
+                           filter (where a.id is not null),
+                           '[]'::json
+                       ) as aliases
+                  from menu_items m
+                  left join menu_item_aliases a on a.menu_item_id = m.id
+                 group by m.id
+                 order by m.category, m.name
+                """
+            )
+        )
+    ).mappings()
+    out = []
+    for r in rows:
+        d = dict(r)
+        raw = d["aliases"]
+        d["aliases"] = json.loads(raw) if isinstance(raw, str) else raw
+        out.append(d)
+    return out
+
+
+async def add_menu_alias(
+    db: AsyncSession,
+    user: CurrentUser,
+    *,
+    alias: str,
+    menu_item_name: str,
+    ip: str | None = None,
+    user_agent: str | None = None,
+) -> dict[str, Any]:
+    """Remember that a bill's spelling means this menu item.
+
+    Refused when the alias IS a menu name (nothing to map) or is already
+    mapped elsewhere (one spelling, one item). Case-insensitive throughout,
+    because Petpooja's own casing is not consistent between reports.
+    """
+    alias = " ".join(alias.split())
+    if not alias:
+        raise ValidationError("The alias is empty.")
+    item = (
+        (
+            await db.execute(
+                text("select id, name from menu_items where lower(name) = lower(:n)"),
+                {"n": menu_item_name},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if item is None:
+        raise NotFoundError(
+            f"{menu_item_name!r} is not a menu item. Upload an Item Wise report that names it."
+        )
+    if await db.scalar(
+        text("select 1 from menu_items where lower(name) = lower(:a)"), {"a": alias}
+    ):
+        raise ConflictError(f"{alias!r} is already a menu item name; it needs no alias.")
+    existing = (
+        (
+            await db.execute(
+                text(
+                    """
+                    select a.alias, m.name
+                      from menu_item_aliases a join menu_items m on m.id = a.menu_item_id
+                     where lower(a.alias) = lower(:a)
+                    """
+                ),
+                {"a": alias},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if existing is not None:
+        raise ConflictError(
+            f"{existing['alias']!r} already maps to {existing['name']!r}. "
+            "Remove that alias first if it is wrong.",
+            extra={"maps_to": existing["name"]},
+        )
+    alias_id = await db.scalar(
+        text(
+            """
+            insert into menu_item_aliases (menu_item_id, alias, created_by)
+            values (:item_id, :alias, :by) returning id
+            """
+        ),
+        {"item_id": item["id"], "alias": alias, "by": user.profile_id},
+    )
+    await record(
+        db,
+        actor_profile_id=user.profile_id,
+        entity_table="menu_item_aliases",
+        entity_id=alias_id,
+        action=AuditAction.CREATE,
+        after={"alias": alias, "menu_item": item["name"]},
+        ip=ip,
+        user_agent=user_agent,
+    )
+    await db.commit()
+    return {"id": str(alias_id), "alias": alias, "menu_item": item["name"]}
+
+
+async def delete_menu_alias(
+    db: AsyncSession,
+    user: CurrentUser,
+    alias_id: uuid.UUID,
+    *,
+    ip: str | None = None,
+    user_agent: str | None = None,
+) -> None:
+    before = (
+        (
+            await db.execute(
+                text(
+                    """
+                    select a.alias, m.name
+                      from menu_item_aliases a join menu_items m on m.id = a.menu_item_id
+                     where a.id = :id
+                    """
+                ),
+                {"id": alias_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if before is None:
+        raise NotFoundError("That alias does not exist.")
+    await db.execute(text("delete from menu_item_aliases where id = :id"), {"id": alias_id})
+    await record(
+        db,
+        actor_profile_id=user.profile_id,
+        entity_table="menu_item_aliases",
+        entity_id=alias_id,
+        action=AuditAction.DELETE,
+        before={"alias": before["alias"], "menu_item": before["name"]},
+        ip=ip,
+        user_agent=user_agent,
+    )
+    await db.commit()
 
 
 async def background_parse(upload_id: uuid.UUID, outlet_id: uuid.UUID) -> None:
