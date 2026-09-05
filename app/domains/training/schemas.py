@@ -95,7 +95,8 @@ class PersonTraining(BaseModel):
     skipped_at: datetime | None
     #: Who asked for the current attempt, when it was a restart.
     triggered_by_name: str | None
-    #: When training was last restarted for this person.
+    #: When training was last restarted for this person, and by whom.
     reset_at: datetime | None
+    reset_by_name: str | None
     #: Whether the caller may restart this person's training.
     can_reset: bool

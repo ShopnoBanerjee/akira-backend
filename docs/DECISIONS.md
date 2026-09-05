@@ -1437,3 +1437,16 @@ through).
 **What the owner reviews.** Every step's English and Bengali text is in
 `content.ts`; the P24 summary listed it. A wording change is a code change
 and a version bump; completions stay.
+
+**Screen-by-screen, 6 Sep 2026.** Every role was driven through its tour in
+the in-app browser before any first login: owner on a phone-width viewport
+(drawer opens for menu steps, Skip offered, re-run from the menu dismissible),
+ops manager in Bengali on a desktop viewport (13 steps, no Skip), outlet
+manager (11 steps, no tablets/settings, no Skip, Restart disabled with the
+reason, no delegation toggle), staff resuming a half-done tour on the tablet,
+shift lead first-time on the tablet (9 steps, empty run list degrades to a
+centred card). Four fixes came out of it: the card is now measured rather
+than assumed and never sits on the control it points at; the person drawer
+reads the live row so a saved delegation shows; a restart before any attempt
+names who asked (`reset_by_name`); a voluntary re-run no longer blanks the
+completion date on the People page.

@@ -8972,6 +8972,17 @@
             ],
             "title": "Reset At"
           },
+          "reset_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reset By Name"
+          },
           "can_reset": {
             "type": "boolean",
             "title": "Can Reset"
@@ -8994,6 +9005,7 @@
           "skipped_at",
           "triggered_by_name",
           "reset_at",
+          "reset_by_name",
           "can_reset"
         ],
         "title": "PersonTraining",

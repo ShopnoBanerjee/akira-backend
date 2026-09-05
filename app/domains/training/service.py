@@ -444,10 +444,11 @@ _PEOPLE = text(
          group by profile_id, track
     ),
     resets as (
-        select profile_id, track, max(superseded_at) as reset_at
+        select distinct on (profile_id, track)
+               profile_id, track, superseded_at as reset_at, superseded_by
           from training_records
          where superseded_at is not null
-         group by profile_id, track
+         order by profile_id, track, superseded_at desc
     )
     select p.id as profile_id, p.full_name, p.global_role, p.is_active,
            l.version, l.language, l.total_steps, l.last_step, l.started_at,
@@ -455,6 +456,7 @@ _PEOPLE = text(
            d.done_at, d.completed as ever_completed, d.skipped as ever_skipped,
            t.full_name as triggered_by_name,
            rs.reset_at,
+           rb.full_name as reset_by_name,
            coalesce(mo.outlet_ids, '{{}}') as outlet_ids,
            coalesce(
                (select c.can_restart_training from profiles c where c.id = :caller), false
@@ -470,9 +472,10 @@ _PEOPLE = text(
       ) d on true
       left join profiles t on t.id = l.triggered_by
       left join lateral (
-           select reset_at from resets
+           select reset_at, superseded_by from resets
             where resets.profile_id = p.id and resets.track = {_TRACK_CASE}
       ) rs on true
+      left join profiles rb on rb.id = rs.superseded_by
       left join lateral (
            select array_agg(om.outlet_id) as outlet_ids
              from outlet_members om
@@ -537,10 +540,14 @@ async def people(db: AsyncSession, user: CurrentUser) -> list[PersonTraining]:
                 last_step=r["last_step"] or 0,
                 total_steps=r["total_steps"],
                 started_at=r["started_at"],
-                completed_at=r["completed_at"],
-                skipped_at=r["skipped_at"],
+                # A voluntary re-run leaves a newer open attempt; the date the
+                # owner cares about is the completion that still counts.
+                completed_at=r["completed_at"] or (r["done_at"] if r["ever_completed"] else None),
+                skipped_at=r["skipped_at"]
+                or (r["done_at"] if r["ever_skipped"] and not r["ever_completed"] else None),
                 triggered_by_name=r["triggered_by_name"],
                 reset_at=r["reset_at"],
+                reset_by_name=r["reset_by_name"],
                 can_reset=can_reset(
                     actor_role=user.global_role,
                     actor_delegated=delegated,

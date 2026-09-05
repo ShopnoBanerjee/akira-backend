@@ -323,6 +323,7 @@ class TestRestarting:
 
         person = await service.reset(session, owner, staff.profile_id)
         assert person.status == "reset" and person.reset_at is not None
+        assert person.reset_by_name == owner.full_name
 
         st = await service.status(session, who, version=V1)
         assert st.required and st.record is None
@@ -337,7 +338,7 @@ class TestRestarting:
         owner = await _person(session, UserRole.OWNER)
         staff = await _person(session, UserRole.STAFF, "AKR-NT01")
         person = await service.reset(session, owner, staff.profile_id)
-        assert person.status == "reset"
+        assert person.status == "reset" and person.reset_by_name == owner.full_name
         fresh = await service.start(
             session, _trainee(staff), version=V1, total_steps=6, language="en"
         )
@@ -376,6 +377,12 @@ class TestTheOwnersView:
             session, _trainee(midway), version=V1, total_steps=6, language="bn"
         )
         await service.advance(session, _trainee(midway), record_id=rec2.id, step=2)
+
+        # A voluntary re-run after completing must not blank the completion date.
+        rerun = await service.start(
+            session, _trainee(done), version=V1, total_steps=6, language="en"
+        )
+        assert rerun.id != rec.id and rerun.status == "not_started"
 
         everyone = {p.profile_id: p for p in await service.people(session, owner)}
         assert everyone[done.profile_id].status == "completed"
