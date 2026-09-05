@@ -144,12 +144,16 @@ class TestThePlan:
         assert p.synthetic_counts["checklist_runs"] >= 1
         assert p.runs_to_delete == 1 and p.exceptions_to_delete == 1
         assert len(p.photo_paths) == 1
-        assert {e for _, e in p.test_accounts} == {
+        # Other suites leave their own @akira.test accounts behind (the shared
+        # database is session-scoped), so this is a superset check: ours are
+        # in the plan; anything else in the plan is also a test account.
+        assert {e for _, e in p.test_accounts} >= {
             "owner@akira.test",
             "staff.nt@akira.test",
             "device.nt01@akira.test",
         }
-        assert p.test_devices == 1
+        assert all(e.endswith("@akira.test") for _, e in p.test_accounts)
+        assert p.test_devices >= 1
         assert p.guard_armed
         assert p.blockers == [
             "no ACTIVE owner with a real email exists - invite one, sign in once, re-run"
