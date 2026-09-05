@@ -121,10 +121,12 @@ would reject the row anyway.
 
 **SOFT DELETE.** `deleted_at` on user-facing entities; all queries filter it.
 
-**RLS.** Enabled and FORCED on all 25 tables. Note 0013 added columns only, no
-new tables. `anon` has zero grants;
+**RLS.** Enabled and FORCED on all 36 tables. `anon` has zero grants;
 `authenticated` has SELECT only. There is no browser write path — every write
-goes through FastAPI, which holds the service role.
+goes through FastAPI, which holds the service role. Since 0021 the grant
+posture is stated ONCE, catalog-driven, with default privileges set for
+future tables — a restore into a new project had silently reset it to the
+platform default (SECURITY.md row 22, D27).
 
 ---
 
@@ -274,7 +276,7 @@ this workflow. Read the file, run it inside a transaction with asyncpg using
 
 ## 7. What is built (P0–P17)
 
-**98 API operations across 80 paths. 36 tables, 20 migrations. All live on
+**98 API operations across 80 paths. 36 tables, 21 migrations. All live on
 Supabase, and CI is green.** Test counts move every epic — run the suites
 rather than quoting this line.
 
@@ -562,12 +564,19 @@ are blocked on something only they can supply.
 **Read `docs/OPEN_ITEMS.md` first.** It is the maintained list of deliberate
 gaps and says what unblocks each. As of P20 the live blockers are:
 
-- **The database is in Sydney.** One round trip from Kolkata is 310 ms and
-  the owner wants responses under 90 ms. P20 (D26) took thirty of the
-  thirty-nine GET endpoints down to exactly one round trip and removed a
-  3.5 s reconnect stall that landed on a random request every four minutes;
-  the round trip itself is the floor and only a move to `ap-south-1`
-  (46 ms) with the API beside it gets under the target. Owner's call.
+- **The database is now in Mumbai** (project `zvskxgmmlahhybzpcicl`,
+  `ap-south-1`, moved 5 Sep 2026 — `docs/RUNBOOK_REGION_MOVE.md` is the
+  as-run record). Single-statement endpoints answer in 62–81 ms from
+  Kolkata; the dashboard in ~250 ms. The Sydney project is PAUSED and the
+  owner cannot resume it; its `sop-photos` bucket (471 demo-run photos and
+  the 2 reference standards) was never copied and is the only thing lost.
+  The pre-move `.env` files are in `local/env-before-mumbai/` (ignored).
+  Next infrastructure step, still the owner's: deploy the API beside the
+  database so the multi-statement screens become LAN calls.
+- **The real outlet is AKIRA Safuipara** — code `AKR-NT01` (codes are
+  immutable by design), renamed 5 Sep 2026, Maps pin 22.5023364, 88.3852304.
+  `AKR-DEV02` and the 425 seeded runs on each outlet are synthetic and STAY
+  until production, by the owner's instruction.
 - **An Akira "Item Report: Day Wise" export.** P17's third adapter
   (`petpooja.itemdays.v1`) was built against another restaurant's old file
   because no AKIRA one exists yet. The recipe and theoretical-consumption

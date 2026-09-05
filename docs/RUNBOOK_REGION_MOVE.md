@@ -35,13 +35,24 @@ Nothing else is configured in the dashboard. Auth settings (email provider,
 redirect URLs) must be copied by hand — check *Authentication → URL
 Configuration* against the Sydney project before the switch.
 
+## 0b. Do not pause or delete the source until step 5 says IDENTICAL
+
+Learned the hard way on 5 Sep 2026. The Sydney project disappeared from DNS
+while the copy was being prepared: the database dump had been taken (and
+was complete), but the Storage buckets — 487 files, every SOP photo, every
+stored sales export, the stock-sheet scan — had not, because copying them
+needs the source project answering. A paused project can be resumed from the
+dashboard and the copy finished; a deleted one cannot. **The source stays up
+until the verify step passes on the new project, and Storage is copied in
+the same sitting as the dump, never later.**
+
 ## 1. Freeze writes to Sydney
 
 Stop the API process and tell anyone with a tablet to pause. The scheduler
 runs inside the API, so stopping it stops the nightly jobs too. From here to
 step 6 the system is down; it should be under an hour.
 
-## 2. Dump Sydney
+## 2. Dump Sydney — database AND files, together
 
 ```bash
 cd akira-backend
@@ -95,6 +106,22 @@ Supabase's `auth` helper functions; every Supabase project has them and the
 policies will create cleanly. If that error appears against Mumbai, stop —
 it means the target is not a Supabase project.
 
+Then the grants. The dump carries the RLS **policies** (they are schema) but
+`--no-privileges` strips every GRANT and REVOKE, and a new Supabase project's
+default ACL then hands `anon` and `authenticated` ALL on every table the
+restore created. RLS is still forced, so nothing is reachable — but the
+promised posture (anon nothing, authenticated SELECT only) is gone, and only
+a catalog query notices. Apply the migration that states the posture once
+for the whole schema:
+
+```bash
+"$PGBIN/psql.exe" -h "$NEW_HOST" -p 5432 -U postgres -d postgres \
+  -v ON_ERROR_STOP=1 -f supabase/migrations/0021_grant_posture.sql
+```
+
+Do NOT re-run `0007_rls.sql`: its `create policy` statements collide with the
+policies the dump already restored (tried, 5 Sep 2026).
+
 ## 4. Copy the files
 
 ```bash
@@ -104,6 +131,16 @@ uv run python scripts/copy_storage.py --dry-run     # then without --dry-run
 ```
 
 Idempotent; re-run until it reports `failed 0`.
+
+## 4½. Storage when the source is already gone
+
+If the source was paused before step 4 could run (as happened), the buckets
+are rebuilt from originals instead. `data_uploads.storage_path` is
+`<outlet_id>/<sha256><ext>`, so an original whose SHA-256 matches the row
+goes back under exactly the path the database expects; verify with
+`sha256sum` first. Reference standards and run photos have no originals
+outside the bucket — mark the reference rows inactive so the AI reviewer does
+not fetch files that no longer exist, and re-capture them.
 
 ## 5. Verify — do not skip
 
@@ -161,6 +198,20 @@ one 46 ms hop; that is a separate change and needs a hosting account.
   are the rollback.
 - Update `docs/HANDOFF.md` section 3 (environment) with the new ref, and
   `OPEN_ITEMS.md`: remove "The database is in Sydney".
+
+## What the move did (measured 5 Sep 2026, API still on a laptop in Kolkata)
+
+| Endpoint | Sydney | Mumbai |
+|---|---:|---:|
+| any single-statement GET (24 of 39 routes) | 310–330 ms | **62–81 ms** |
+| `/dashboard/outlets` | 940 ms (3,074 before P20) | **235 ms** |
+| `/dashboard/outlet-health` | 942 ms (3,381 before P20) | **250 ms** |
+| `/sop/runs/{id}/detail` | 1,566 ms | **199 ms** |
+| `/sales/forecast` | 316 ms | **123 ms** |
+
+Every number is best-of-three on an idle machine. The remaining cost on the
+multi-statement screens is two or three Kolkata↔Mumbai hops; deploying the
+API beside the database (step 7) turns those into LAN calls.
 
 ## Rollback
 

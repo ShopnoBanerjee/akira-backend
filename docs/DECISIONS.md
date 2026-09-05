@@ -1178,3 +1178,33 @@ shares the per-pillar statements, and two copies of the same SQL would
 drift); no Redis or external cache (one process, one dictionary, a TTL);
 no `pool_pre_ping` (a round trip per request to guard against what
 keepalives and a sane recycle already prevent).
+
+---
+
+## D27 — The grant posture is one migration, not the sum of many (P21)
+
+Moving the database to Mumbai (D26's recommendation, done 5 Sep 2026) was a
+`pg_dump --no-privileges` and a restore, exactly as Supabase documents. The
+policies came across — they are schema. The grants did not — they are
+privileges — and the new project's platform default then gave `anon` and
+`authenticated` ALL on every restored table. RLS was forced throughout, so
+nothing was reachable; but SECURITY.md row 3's promise, "anon holds nothing,
+authenticated holds SELECT only", had quietly stopped being true, and the
+only thing that noticed was a catalog query run by hand.
+
+Until then the posture existed as one statement per table, added in
+whichever migration created the table (0007 swept the first twenty-five;
+0010–0019 each did their own). That is exactly the shape that loses to a
+restore, and to the first developer who forgets.
+
+**Decision:** `0021_grant_posture.sql` states it once, over the catalog —
+every public table, sequence and function, whatever their number — and sets
+DEFAULT privileges for the migrating role so an object created tomorrow
+starts with the posture rather than needing to remember it. Idempotent, so
+it is also the thing to run after any future restore. The per-table
+statements in earlier migrations stay as history; redundant now, not wrong.
+
+Not done: altering `supabase_admin`'s default privileges — `postgres` is not
+allowed to, and nothing of ours is created by that role. Verified on Mumbai:
+`test_rls.py`'s catalog assertions pass by hand, and a throwaway table
+created after 0021 came up anon-nothing / authenticated-SELECT.
