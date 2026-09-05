@@ -153,9 +153,12 @@ on top of that would have muddied the signal.
   reads the export's `Restaurant Name:` preamble, and it is checked against
   `sales.petpooja_restaurant_name` before anything is stored or written (D25).
   Two things about it are deliberate and should not be "fixed":
-  - It is **unarmed until that setting is given a value**, so it could ship
-    without taking sales ingestion down. Arm it by copying the name shown on
-    any upload card into Settings → Sales.
+  - It **ships unarmed** — an empty setting accepts any name — so it could
+    land without taking sales ingestion down. **Armed globally to `Akira` on
+    5 Sep 2026**, which is what all three real Petpooja exports carry. If an
+    export is ever refused because Petpooja's account name was edited, copy
+    the name off the upload card into Settings → Sales rather than clearing
+    the setting.
   - It catches the wrong **restaurant**, never the wrong **outlet**. Both
     outlets sit under one Petpooja account and print the same name; nothing
     in the file tells them apart, which is why the uploader picks the outlet
