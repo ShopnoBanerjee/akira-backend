@@ -1305,3 +1305,10 @@ gives stock sheets — is the fix and is filed in OPEN_ITEMS; until then the
 measured Donburi rate is blank rather than wrong. A period's category rows
 are REPLACED as a set on re-upload, because Petpooja recomputes the whole
 report and a category that vanished must not linger.
+
+**Addendum, same day.** The alias table exists (0023, `menu_item_aliases`: one
+spelling to one item, case-insensitive, admin-entered, audited). The owner named
+the four spellings; the measured Donburi rate went from blank to 16% against
+Petpooja's 18%, and no bill name is unmapped. The Sales page offers a "map this
+name" control the moment a new unmapped spelling appears, so the next menu
+change costs a dropdown, not a ticket.
