@@ -5,11 +5,12 @@ guards here are the control. Every protected route composes one of them.
 """
 
 import json
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -148,18 +149,80 @@ _IDENTITY_SQL = text(
 )
 
 
+#: How long a loaded identity is trusted before Postgres is asked again.
+#:
+#: The identity statement was the one round trip EVERY authenticated request
+#: paid before its handler did anything — with the database 300 ms away, half
+#: the latency of a typical screen, and the whole of it for the many screens
+#: that need one statement of their own. Who somebody is changes rarely, and
+#: always through this API, so every write that can change it calls
+#: `forget_identity` and the next request reloads. The TTL is the backstop for
+#: a change that arrives some other way — SQL by hand, a second API process —
+#: and bounds how long a revoked role or deactivated account can linger.
+#:
+#: Only identities that resolved to a usable caller are cached. A pending
+#: activation, a deactivated or deleted account, and an unknown subject are
+#: re-read every time, so activating someone takes effect on their next click
+#: without anybody having to remember to clear anything.
+IDENTITY_CACHE_TTL_SECONDS = 60.0
+#: A ceiling, not a target: the whole staff of a restaurant group is a few
+#: hundred subjects. If it is ever reached, something is minting tokens.
+_IDENTITY_CACHE_MAX = 5000
+
+_identity_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def forget_identity(*subjects: object) -> None:
+    """Drop the cached identity for these auth subjects (profile ids, or a
+    device's auth_user_id). Call it AFTER the commit that changed them: called
+    before, a request racing the write could re-cache the old row."""
+    for subject in subjects:
+        if subject is not None:
+            _identity_cache.pop(str(subject), None)
+
+
+def forget_all_identities() -> None:
+    """For a change whose reach is not one person — an outlet deactivated,
+    which changes the membership list of everyone attached to it."""
+    _identity_cache.clear()
+
+
+def _cached_identity(subject: str) -> dict[str, Any] | None:
+    hit = _identity_cache.get(subject)
+    if hit is None:
+        return None
+    expires_at, row = hit
+    if expires_at <= time.monotonic():
+        _identity_cache.pop(subject, None)
+        return None
+    return row
+
+
+def _remember_identity(subject: str, row: dict[str, Any]) -> None:
+    if IDENTITY_CACHE_TTL_SECONDS <= 0:
+        return
+    if len(_identity_cache) >= _IDENTITY_CACHE_MAX:
+        _identity_cache.clear()
+    _identity_cache[subject] = (time.monotonic() + IDENTITY_CACHE_TTL_SECONDS, row)
+
+
 async def current_user(
     request: Request,
     claims: Annotated[TokenClaims, Depends(get_claims)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CurrentUser:
-    """Load the caller's identity, once per request, in one round trip."""
+    """Load the caller's identity: once per request, and once per minute per
+    caller across requests. See IDENTITY_CACHE_TTL_SECONDS."""
     cached = getattr(request.state, "current_user", None)
     if isinstance(cached, CurrentUser):
         return cached
 
-    subject = claims.subject
-    row = (await db.execute(_IDENTITY_SQL, {"subject": subject})).mappings().first()
+    subject = str(claims.subject)
+    row = _cached_identity(subject)
+    from_cache = row is not None
+    if row is None:
+        fetched = (await db.execute(_IDENTITY_SQL, {"subject": subject})).mappings().first()
+        row = dict(fetched) if fetched is not None else None
 
     device = None
     if row is not None and row["device_id"] is not None:
@@ -184,6 +247,8 @@ async def current_user(
                 memberships=[],
                 device=device,
             )
+            if not from_cache and row is not None:
+                _remember_identity(subject, row)
             request.state.current_user = user
             return user
         # Authenticated with no profile: a self-signup. Give them a dormant
@@ -235,6 +300,8 @@ async def current_user(
         memberships=memberships,
         device=device,
     )
+    if not from_cache:
+        _remember_identity(subject, row)
     request.state.current_user = user
     return user
 

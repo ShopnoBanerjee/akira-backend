@@ -19,7 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record
-from app.core.deps import CurrentUserDep, DbDep, require_management, require_owner
+from app.core.deps import CurrentUserDep, DbDep, forget_identity, require_management, require_owner
 from app.core.enums import AuditAction
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError
 
@@ -61,6 +61,17 @@ _COLUMNS = """
     d.label, d.is_active, d.last_seen_at, d.created_at
 """
 _FROM = " from outlet_devices d join outlets o on o.id = d.outlet_id"
+
+
+async def _auth_subject(db: AsyncSession, device_id: uuid.UUID) -> uuid.UUID | None:
+    """The auth account behind a tablet — the key its cached identity sits
+    under. Read before the change so it can be forgotten after the commit."""
+    value = (
+        await db.execute(
+            text("select auth_user_id from outlet_devices where id = :id"), {"id": device_id}
+        )
+    ).scalar()
+    return uuid.UUID(str(value)) if value is not None else None
 
 
 async def _get(db: AsyncSession, device_id: uuid.UUID) -> Device:
@@ -181,6 +192,9 @@ async def register_device(
         user_agent=request.headers.get("user-agent"),
     )
     await db.commit()
+    # The account may already hold a cached identity from before it was a
+    # tablet (a pending-activation lookup is never cached, but be certain).
+    forget_identity(payload.auth_user_id)
     return await _get(db, device_id)
 
 
@@ -198,6 +212,7 @@ async def update_device(
     user: CurrentUserDep,
 ) -> Device:
     before = await _get(db, device_id)
+    subject = await _auth_subject(db, device_id)
     changes = payload.model_dump(exclude_unset=True)
     if changes:
         assignments = ", ".join(f"{c} = :{c}" for c in changes)
@@ -218,6 +233,8 @@ async def update_device(
             user_agent=request.headers.get("user-agent"),
         )
         await db.commit()
+        # Suspending a tablet must bite on its next request, not in a minute.
+        forget_identity(subject)
     return await _get(db, device_id)
 
 
@@ -237,6 +254,7 @@ async def revoke_device(
     account reaching any outlet data, without touching the runs it already
     recorded."""
     before = await _get(db, device_id)
+    subject = await _auth_subject(db, device_id)
     await db.execute(
         text(
             "update outlet_devices set deleted_at = now(), is_active = false"
@@ -256,3 +274,5 @@ async def revoke_device(
         user_agent=request.headers.get("user-agent"),
     )
     await db.commit()
+    # "The moment a tablet goes missing" — so the cached identity goes now.
+    forget_identity(subject)

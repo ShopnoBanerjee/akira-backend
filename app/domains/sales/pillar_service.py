@@ -127,13 +127,25 @@ def _targets(values: dict[str, Any]) -> SalesTargets:
     )
 
 
+#: Public names, so a caller that resolves several pillars' settings in ONE
+#: statement (the dashboard) can ask for these keys alongside the others and
+#: build the targets from the shared result. The `_many` helpers below stay
+#: for callers that want one pillar on its own; both routes build the same
+#: dataclass through the same function.
+TARGET_KEYS = _TARGET_KEYS
+
+
+def targets_from(values: dict[str, Any]) -> SalesTargets:
+    return _targets(values)
+
+
 async def sales_targets_many(
     db: AsyncSession, *, outlet_ids: list[uuid.UUID], at: datetime
 ) -> dict[uuid.UUID, SalesTargets]:
     """Targets in force at the period's END, per outlet — re-opening last
     month scores against last month's targets (D9), same as the SOP weights."""
     per_outlet = await resolve_many_outlets(db, _TARGET_KEYS, outlet_ids=outlet_ids, at=at)
-    return {outlet: _targets(values) for outlet, values in per_outlet.items()}
+    return {outlet: targets_from(values) for outlet, values in per_outlet.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -218,16 +230,20 @@ async def guest_inputs_many(
     }
 
 
+GUEST_TARGET_KEYS = _GUEST_TARGET_KEYS
+
+
+def guest_targets_from(values: dict[str, Any]) -> GuestTargets:
+    return GuestTargets(
+        repeat_rate=float(values["guest.target.repeat_rate"]),
+        w_repeat=float(values["guest.weight.repeat"]),
+        green=float(values["scoring.band.green"]),
+        amber=float(values["scoring.band.amber"]),
+    )
+
+
 async def guest_targets_many(
     db: AsyncSession, *, outlet_ids: list[uuid.UUID], at: datetime
 ) -> dict[uuid.UUID, GuestTargets]:
     per_outlet = await resolve_many_outlets(db, _GUEST_TARGET_KEYS, outlet_ids=outlet_ids, at=at)
-    return {
-        outlet: GuestTargets(
-            repeat_rate=float(values["guest.target.repeat_rate"]),
-            w_repeat=float(values["guest.weight.repeat"]),
-            green=float(values["scoring.band.green"]),
-            amber=float(values["scoring.band.amber"]),
-        )
-        for outlet, values in per_outlet.items()
-    }
+    return {outlet: guest_targets_from(values) for outlet, values in per_outlet.items()}

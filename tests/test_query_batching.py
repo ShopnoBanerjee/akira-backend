@@ -263,3 +263,87 @@ class TestRecordingThatSomebodyWasHere:
 
     async def test_an_unknown_profile_returns_nothing(self, session: AsyncSession) -> None:
         assert await users_repo.get_profile_and_touch(session, uuid.uuid4()) is None
+
+
+class TestTheHealthCardReadsTogether:
+    """The latency pass put the card's reads on the wire at once and folded
+    four settings statements into one. Neither may change a number. These
+    pin the fanned-out path to the sequential functions it replaced — the
+    digest still calls those, and the two must never disagree."""
+
+    async def test_one_settings_statement_builds_every_pillars_targets(
+        self, session: AsyncSession
+    ) -> None:
+        from app.core.settings_value import resolve_many_outlets as resolve
+        from app.domains.dashboard import router as dashboard
+        from app.domains.inventory import pillar_service as inventory
+        from app.domains.sales import pillar_service as sales
+
+        outlets = await _outlets(session)
+        # An override on one outlet, so the slicing is tested against a
+        # difference and not only against defaults.
+        await session.execute(
+            text(
+                "insert into app_settings (key, scope, outlet_id, value, effective_from)"
+                " values ('sales.target.aov_paise', 'outlet', :o, '123400'::jsonb,"
+                " now() - interval '1 day')"
+            ),
+            {"o": outlets[0]},
+        )
+        await session.commit()
+        at = datetime.now(UTC)
+
+        combined = await resolve(session, dashboard._ALL_SETTING_KEYS, outlet_ids=outlets, at=at)
+        sales_t = await sales.sales_targets_many(session, outlet_ids=outlets, at=at)
+        guest_t = await sales.guest_targets_many(session, outlet_ids=outlets, at=at)
+        inv_t = await inventory.inventory_targets_many(session, outlet_ids=outlets, at=at)
+        weights = await resolve(session, dashboard._WEIGHT_KEYS, outlet_ids=outlets, at=at)
+
+        for outlet in outlets:
+            assert sales.targets_from(combined[outlet]) == sales_t[outlet]
+            assert sales.guest_targets_from(combined[outlet]) == guest_t[outlet]
+            assert inventory.targets_from(combined[outlet]) == inv_t[outlet]
+            assert dashboard._weights(combined[outlet]) == dashboard._weights(weights[outlet])
+        assert sales_t[outlets[0]].aov_paise == 123400.0
+
+    async def test_the_fanned_out_load_agrees_with_each_read_on_its_own(
+        self, session: AsyncSession
+    ) -> None:
+        """`_load` runs the same functions on sibling sessions bound to this
+        session's engine. Same functions, same database, same answers."""
+        from app.domains.dashboard import router as dashboard
+        from app.domains.inventory import pillar_service as inventory
+        from app.domains.sales import pillar_service as sales
+
+        outlets = await _outlets(session)
+        start, end = date(2026, 8, 1), date(2026, 8, 31)
+
+        loaded = await dashboard._load(session, outlets, start=start, end=end, trend_for=outlets[0])
+
+        assert loaded.counts == await metrics.outlet_counts_many(
+            session, outlet_ids=outlets, start=start, end=end
+        )
+        assert loaded.sales_in == await sales.sales_inputs_many(
+            session, outlet_ids=outlets, start=start, end=end
+        )
+        assert loaded.guest_in == await sales.guest_inputs_many(
+            session, outlet_ids=outlets, start=start, end=end
+        )
+        assert loaded.inv_in == await inventory.inventory_inputs_many(
+            session, outlet_ids=outlets, start=start, end=end
+        )
+        assert loaded.trend == await metrics.daily_scores(
+            session, outlet_id=outlets[0], start=start, end=end
+        )
+        assert set(loaded.settings) == set(outlets)
+
+    async def test_without_a_trend_outlet_the_trend_is_empty_not_a_query(
+        self, session: AsyncSession
+    ) -> None:
+        from app.domains.dashboard import router as dashboard
+
+        outlets = await _outlets(session)
+        loaded = await dashboard._load(
+            session, outlets, start=date(2026, 8, 1), end=date(2026, 8, 2)
+        )
+        assert loaded.trend == []

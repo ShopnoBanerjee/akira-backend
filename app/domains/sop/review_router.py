@@ -6,6 +6,7 @@ approve), the service refuses caller == submitter, and the database CHECK
 would reject the row even if both were bypassed.
 """
 
+import asyncio
 import uuid
 from datetime import date, datetime
 from typing import Annotated, Any
@@ -16,6 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record
+from app.core.db import read_with
 from app.core.deps import CurrentUser, CurrentUserDep, DbDep, require_management
 from app.core.enums import APPROVER_ROLES, AuditAction, RunStatus
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError
@@ -174,6 +176,44 @@ async def list_runs(
     return [QueueRow(**r) for r in rows]
 
 
+_RUN_ITEMS_SQL = text(
+    """
+    select ri.id, ri.sort_order, ri.result,
+           cast(ri.value_numeric as float8) as value_numeric,
+           ri.value_text, ri.out_of_range, ri.note,
+           ri.photo_path, ri.photo_uploaded_at, ri.integrity_flags,
+           ri.integrity_detail, ri.photo_processed_at,
+           cast(ri.photo_luminance as float8) as photo_luminance,
+           v.title, v.title_bn, v.instruction, v.instruction_bn,
+           v.requires_photo, v.requires_value, v.value_type,
+           cast(v.value_min as float8) as value_min,
+           cast(v.value_max as float8) as value_max,
+           v.value_unit, v.is_critical, v.allow_na,
+           -- Whether this reviewer has already opened the photo. Was its own
+           -- query; an `exists` on an already-indexed column costs nothing
+           -- here and saves a round trip on a screen that has several.
+           exists (
+               select 1 from run_review_views rv
+                where rv.run_item_id = ri.id
+                  and rv.reviewer_id = :reviewer
+           ) as viewed_by_me
+      from checklist_run_items ri
+      join checklist_template_item_versions v
+        on v.id = ri.template_item_version_id
+     where ri.run_id = :run_id
+     order by ri.sort_order
+    """
+)
+
+
+async def _run_items(
+    db: AsyncSession, run_id: uuid.UUID, *, reviewer: uuid.UUID
+) -> list[dict[str, Any]]:
+    """The run's items with their snapshot definitions, in checklist order."""
+    rows = await db.execute(_RUN_ITEMS_SQL, {"run_id": run_id, "reviewer": reviewer})
+    return [dict(r) for r in rows.mappings()]
+
+
 @router.get(
     "/runs/{run_id}/detail",
     dependencies=[Depends(require_management)],
@@ -218,51 +258,17 @@ async def run_detail(run_id: uuid.UUID, db: DbDep, user: CurrentUserDep) -> dict
     if not user.can_access_outlet(run["outlet_id"]):
         raise ForbiddenError("You do not have access to that outlet.")
 
-    items = [
-        dict(r)
-        for r in (
-            await db.execute(
-                text(
-                    """
-                    select ri.id, ri.sort_order, ri.result,
-                           cast(ri.value_numeric as float8) as value_numeric,
-                           ri.value_text, ri.out_of_range, ri.note,
-                           ri.photo_path, ri.photo_uploaded_at, ri.integrity_flags,
-                           ri.integrity_detail, ri.photo_processed_at,
-                           cast(ri.photo_luminance as float8) as photo_luminance,
-                           v.title, v.title_bn, v.instruction, v.instruction_bn,
-                           v.requires_photo, v.requires_value, v.value_type,
-                           cast(v.value_min as float8) as value_min,
-                           cast(v.value_max as float8) as value_max,
-                           v.value_unit, v.is_critical, v.allow_na,
-                           -- Whether this reviewer has already opened the
-                           -- photo. Was its own query; an `exists` on an
-                           -- already-indexed column costs nothing here and
-                           -- saves a round trip on a screen that has several.
-                           exists (
-                               select 1 from run_review_views rv
-                                where rv.run_item_id = ri.id
-                                  and rv.reviewer_id = :reviewer
-                           ) as viewed_by_me
-                      from checklist_run_items ri
-                      join checklist_template_item_versions v
-                        on v.id = ri.template_item_version_id
-                     where ri.run_id = :run_id
-                     order by ri.sort_order
-                    """
-                ),
-                {"run_id": run_id, "reviewer": user.profile_id},
-            )
-        ).mappings()
-    ]
-
-    # Advisory verdicts, threshold already applied. Attached per item so the
-    # manager sees the opinion beside the photo it is about, never as a
-    # separate screen they would have to go and look for.
+    # The items and the advisory verdicts are independent reads keyed on the
+    # same run, so they go on the wire together (`read_with`) rather than one
+    # after the other. The outlet is handed to the verdict lookup rather than
+    # looked up again — this handler read it out of the run a moment ago.
     #
-    # The outlet is handed over rather than looked up again — this handler read
-    # it out of the run three statements ago.
-    verdicts = await ai_review.latest_for_run(db, run_id, outlet_id=run["outlet_id"])
+    # Verdicts are attached per item so the manager sees the opinion beside
+    # the photo it is about, never as a separate screen to go and find.
+    items, verdicts = await asyncio.gather(
+        read_with(db, _run_items, run_id, reviewer=user.profile_id),
+        read_with(db, ai_review.latest_for_run, run_id, outlet_id=run["outlet_id"]),
+    )
 
     # One signing request for every photo on the screen. Signing them inside
     # the loop below meant a manager opening a twelve-item run waited on twelve

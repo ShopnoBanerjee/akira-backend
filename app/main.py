@@ -10,10 +10,11 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import text
 
 from app.core.config import get_settings
-from app.core.db import dispose_engine, get_engine
+from app.core.db import dispose_engine, get_engine, warm_pool
 from app.core.errors import register_error_handlers
 from app.domains.dashboard.router import router as dashboard_router
 from app.domains.devices.router import router as devices_router
@@ -39,6 +40,11 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    # Pay the 3.5 s connection setup now, several at once, rather than have the
+    # first few requests after a deploy each pay it alone. See db.warm_pool.
+    if settings.DATABASE_URL:
+        opened = await warm_pool(get_engine())
+        logger.info("database pool warmed: %d connections", opened)
     # The scheduler shares this process's event loop. Exactly one instance may
     # run it; see app/jobs/scheduler.py.
     await scheduler.start()
@@ -65,6 +71,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# The browser link is the other long wire. A 100-row list is 45 KB of JSON and
+# crosses a 300 ms path in several TCP windows; gzipped it is one. Below 1 KB
+# the header costs more than it saves.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 register_error_handlers(app)
 

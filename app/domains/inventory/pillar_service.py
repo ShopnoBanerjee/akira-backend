@@ -130,9 +130,18 @@ def _targets(values: dict[str, Any]) -> InventoryTargets:
     )
 
 
+#: Public, for the dashboard's single combined settings statement — see the
+#: same note in sales/pillar_service.py.
+TARGET_KEYS = _TARGET_KEYS
+
+
+def targets_from(values: dict[str, Any]) -> InventoryTargets:
+    return _targets(values)
+
+
 async def inventory_targets_many(
     db: AsyncSession, *, outlet_ids: list[uuid.UUID], at: datetime
 ) -> dict[uuid.UUID, InventoryTargets]:
     """Targets in force at the period's END, per outlet (D9)."""
     per_outlet = await resolve_many_outlets(db, _TARGET_KEYS, outlet_ids=outlet_ids, at=at)
-    return {outlet: _targets(values) for outlet, values in per_outlet.items()}
+    return {outlet: targets_from(values) for outlet, values in per_outlet.items()}

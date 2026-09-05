@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record
-from app.core.deps import CurrentUser
+from app.core.deps import CurrentUser, forget_all_identities
 from app.core.enums import AuditAction
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError
 from app.domains.outlets import repository
@@ -119,6 +119,11 @@ async def update(
         user_agent=user_agent,
     )
     await db.commit()
+    if "is_active" in changes:
+        # An outlet going inactive drops out of every member's membership
+        # list, which is part of who they are to the guards. That is many
+        # people at once, so everyone is forgotten rather than guessed at.
+        forget_all_identities()
     return OutletResponse(**after)
 
 
@@ -156,3 +161,4 @@ async def soft_delete(
         user_agent=user_agent,
     )
     await db.commit()
+    forget_all_identities()  # see update(): memberships changed for everyone

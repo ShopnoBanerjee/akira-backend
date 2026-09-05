@@ -1076,3 +1076,105 @@ case `json.loads` gets silently wrong rather than loudly.
   `Notifier` interface is pluggable so a WhatsApp implementation is additive.
 - **A4 — Outlet 2 timeline is unknown**, so the dev seed carries a second dummy
   outlet from day one, as the spec's risk table requires.
+
+---
+
+## D26 — Latency is the wire, so spend the wire once (P20)
+
+The API was measured, endpoint by endpoint, against the live database, with
+every SQL statement timed from the start of its request. Four facts came out,
+and every change below follows from one of them.
+
+**1. The database is in Sydney.** The Supabase project sits in
+`ap-southeast-2`. From Kolkata one round trip is 310–320 ms; to Mumbai
+(`ap-south-1`) it is 46 ms. Postgres's own work is nothing — the whole
+dashboard settings statement executes in 1.3 ms, the SOP counts in 0.35 ms —
+so a request's latency is, to the millisecond, its number of round trips
+times 315. `pg_stat_statements` confirms it: nothing the app runs averages
+over 50 ms server-side except one 240-row list.
+
+**2. A new connection costs 3.5 s, not 152 ms.** The earlier note in
+`app/core/db.py` measured a bare TCP handshake. DNS, IPv6, TLS and auth
+together are 3.5 s (median of four). `pool_recycle` was 240 s, so every
+pooled connection was torn down and rebuilt every four minutes, and whichever
+request drew it next stalled for 3.5 s. That is what "the API is randomly
+slow" looked like from a browser: not slow queries, a reconnect tax landing
+on a different person every few minutes.
+
+**3. asyncpg's caches are per connection.** A statement on a cold connection
+costs up to FOUR round trips — parse/describe, then a type lookup for each
+enum it has not seen, then execute — and one on a warm connection costs one.
+The server had answered asyncpg's type-introspection query 1,231 times. With
+a FIFO pool of ten, each request rotated onto the coldest connection, and the
+240 s recycle wiped every cache every four minutes anyway. An empty
+`/sop/runs/today` — two bytes — took 1,250 ms.
+
+**4. Every authenticated request paid a round trip to learn who was
+calling** before its handler did anything. For the many screens that need one
+statement of their own, that was half their latency.
+
+### What changed
+
+- **Identity is cached per caller for 60 s** (`deps.py`), keyed on the
+  token's subject. Only identities that resolved to a usable caller are
+  cached, so a pending, deactivated or unknown account is re-read on every
+  request and activation takes effect on the next click. Every write that
+  changes who someone is — role, outlets, deactivation, tablet suspension or
+  revocation, an outlet going inactive — calls `forget_identity` (or
+  `forget_all_identities`) AFTER its commit. The TTL is the backstop for a
+  change made outside this process.
+- **Independent reads go on the wire together.** `db.read_with(db, fn, ...)`
+  runs one read on a sibling autocommit session bound to the caller's own
+  engine, so `asyncio.gather` can send several at once. The health card's
+  five aggregates plus its trend now leave together; so do the review
+  screen's items and verdicts, and the live forecast's three inputs. The
+  sibling is bound to the caller's engine on purpose: a test that hands in a
+  session on a throwaway database fans out on that database, never on
+  `DATABASE_URL`.
+- **One settings statement for the whole card.** The four pillars each
+  resolved their own targets — four trips asking the same function about the
+  same outlets at the same instant. `_ALL_SETTING_KEYS` resolves them once;
+  each pillar service exposes `targets_from(values)` so the digest, which
+  still wants one pillar at a time, builds the same dataclass through the
+  same function. A test pins the two routes to each other.
+- **The pool keeps its connections and keeps them warm.** `pool_recycle`
+  1800 s with server-side TCP keepalives; `pool_use_lifo=True` so the
+  connection just returned is the next one handed out and a few stay hot;
+  six connections opened together at startup (`warm_pool`) so the first
+  requests after a deploy do not each pay 3.5 s. The pool grew to 10 + 15 to
+  cover the fan-out.
+- **Responses are gzipped** above 1 KB. The browser link is the other long
+  wire, and a 100-row list is 45 KB of JSON.
+
+### What it did, measured from Kolkata against Sydney
+
+| Endpoint | Before | After | Trips now |
+|---|---:|---:|---|
+| `/dashboard/outlet-health` | 3,381 ms | 942 ms | 3 |
+| `/dashboard/outlets` | 3,074 ms | 940 ms | 3 |
+| `/sop/runs` (100 rows, 49 KB) | 1,566 ms | 324 ms | 1 |
+| `/sales/orders` (47 KB) | 1,667 ms | 316 ms | 1 |
+| `/sales/forecast` | 1,233 ms | 316 ms | 1 (3 in parallel) |
+| every other list or lookup | 616–930 ms | 310–330 ms | 1 |
+
+Thirty of thirty-nine GET routes are now exactly one round trip. The
+randomly placed 3.5 s stall is gone.
+
+### What it cannot do, and the decision that follows
+
+**A response cannot be faster than one round trip, and one round trip to
+Sydney is 310 ms.** The sub-90 ms target is unreachable from this topology
+by any amount of code. It is reachable by moving: a Supabase project in
+`ap-south-1` is 46 ms from Kolkata, and an API deployed beside it makes
+every database call a LAN call, leaving the browser one 46 ms hop per
+request. Supabase does not move projects between regions; the path is a new
+project in Mumbai, `pg_dump`/restore (downtime = copy time; this database is
+small), re-run the seed of auth users, repoint `.env`. That is the next
+infrastructure decision and it is the owner's — it is filed in
+`OPEN_ITEMS.md`.
+
+Not done, on purpose: no single mega-statement for the card (the digest
+shares the per-pillar statements, and two copies of the same SQL would
+drift); no Redis or external cache (one process, one dictionary, a TTL);
+no `pool_pre_ping` (a round trip per request to guard against what
+keepalives and a sane recycle already prevent).

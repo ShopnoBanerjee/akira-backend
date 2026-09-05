@@ -15,6 +15,7 @@ Three jobs, kept apart on purpose:
   and overall, per the spec's "report MAPE weekly".
 """
 
+import asyncio
 import json
 import logging
 import uuid
@@ -26,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.business_date import business_date as to_business_date
 from app.core.business_date import outlet_now
+from app.core.db import read_with
 from app.core.settings_value import resolve_many
 from app.domains.sales import forecast as model
 
@@ -118,11 +120,24 @@ async def events_for(
 async def compute(
     db: AsyncSession, outlet_id: uuid.UUID, *, as_of: date, horizon: int | None = None
 ) -> list[model.Forecast]:
-    settings = await resolve_many(db, _SETTING_KEYS, outlet_id=outlet_id)
-    days = horizon if horizon is not None else int(settings["forecast.horizon_days"])
-    history = await daily_history(db, outlet_id, as_of=as_of)
-    targets = [as_of + timedelta(days=n) for n in range(1, days + 1)]
-    events = await events_for(db, outlet_id, start=targets[0], end=targets[-1])
+    """Settings, history and event flags are three independent reads. When
+    the caller names the horizon — the live endpoint does — all three go on
+    the wire together. The nightly job leaves it to the setting, so it has to
+    read that first; it runs at 05:30 and nobody is waiting on it."""
+    if horizon is None:
+        settings = await resolve_many(db, _SETTING_KEYS, outlet_id=outlet_id)
+        days = int(settings["forecast.horizon_days"])
+        targets = [as_of + timedelta(days=n) for n in range(1, days + 1)]
+        history = await daily_history(db, outlet_id, as_of=as_of)
+        events = await events_for(db, outlet_id, start=targets[0], end=targets[-1])
+    else:
+        days = horizon
+        targets = [as_of + timedelta(days=n) for n in range(1, days + 1)]
+        settings, history, events = await asyncio.gather(
+            read_with(db, resolve_many, _SETTING_KEYS, outlet_id=outlet_id),
+            read_with(db, daily_history, outlet_id, as_of=as_of),
+            read_with(db, events_for, outlet_id, start=targets[0], end=targets[-1]),
+        )
     out = []
     for target in targets:
         event = events.get(target, {})

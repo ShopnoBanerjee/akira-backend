@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import record
 from app.core.config import get_settings
-from app.core.deps import CurrentUser
+from app.core.deps import CurrentUser, forget_identity
 from app.core.enums import AuditAction, UserRole
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError
 from app.core.security import hash_pin
@@ -181,6 +181,9 @@ async def invite(
         user_agent=user_agent,
     )
     await db.commit()
+    # Re-inviting someone who exists changes their role and outlets; their
+    # cached identity must not outlive that.
+    forget_identity(auth_user_id)
 
     return InviteUserResponse(
         profile_id=auth_user_id,
@@ -244,6 +247,7 @@ async def update_user(
         user_agent=user_agent,
     )
     await db.commit()
+    forget_identity(profile_id)  # deactivation must bite on their next request
     return await get_one(db, profile_id)
 
 
@@ -290,6 +294,7 @@ async def set_role(
         user_agent=user_agent,
     )
     await db.commit()
+    forget_identity(profile_id)
     return await get_one(db, profile_id)
 
 
@@ -326,6 +331,7 @@ async def set_outlets(
         user_agent=user_agent,
     )
     await db.commit()
+    forget_identity(profile_id)
     return await get_one(db, profile_id)
 
 

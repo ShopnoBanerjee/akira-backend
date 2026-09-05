@@ -274,7 +274,7 @@ this workflow. Read the file, run it inside a transaction with asyncpg using
 
 ## 7. What is built (P0–P17)
 
-**98 API operations across 80 paths. 36 tables, 19 migrations. All live on
+**98 API operations across 80 paths. 36 tables, 20 migrations. All live on
 Supabase, and CI is green.** Test counts move every epic — run the suites
 rather than quoting this line.
 
@@ -366,6 +366,23 @@ stale.** The project moved on 3 Sep 2026 and `.venv`'s console scripts still
 held absolute paths to the old location — so `uv run python` worked while
 `uv run pytest` and `uv run ruff` did not, which reads like a pytest problem
 and is not one. `uv sync --all-groups --reinstall` rewrites them.
+
+**Do not benchmark while the test suite runs on the same laptop.** The
+P20 latency numbers were measured twice; the first set was taken while pytest
+was saturating the machine and showed single-statement endpoints at five
+times the wire round trip. It looked like a real finding for twenty minutes.
+Measure on an idle machine, take the best of three, and read
+`docs/DECISIONS.md` D26 before trusting any latency claim in here.
+
+**Git Bash rewrites an environment variable that starts with `/` into a
+Windows path** before a native executable sees it — `FILTER='^/dashboard'`
+reached Python as `C:/Program Files/Git/dashboard`. Either do not start the
+value with `/` or set `MSYS_NO_PATHCONV=1`, but the latter also stops
+`/c/Users/...` script paths being converted, so pass those as `C:/Users/...`.
+
+**`uv run pytest -q` prints no summary line.** `pyproject.toml` already sets
+`-q` in `addopts`; a second one is `-qq`, which drops the "N passed" line, and
+the run reads as if it was cut off. Run it without `-q`.
 
 **When patching a formatted file with a Python string replace, assert the
 anchor matched — and that it matched exactly once.** Prettier and ruff reflow
@@ -543,8 +560,14 @@ not been picked, and picking it is the owner's call — several Stage 2 threads
 are blocked on something only they can supply.
 
 **Read `docs/OPEN_ITEMS.md` first.** It is the maintained list of deliberate
-gaps and says what unblocks each. As of P17 the live blockers are:
+gaps and says what unblocks each. As of P20 the live blockers are:
 
+- **The database is in Sydney.** One round trip from Kolkata is 310 ms and
+  the owner wants responses under 90 ms. P20 (D26) took thirty of the
+  thirty-nine GET endpoints down to exactly one round trip and removed a
+  3.5 s reconnect stall that landed on a random request every four minutes;
+  the round trip itself is the floor and only a move to `ap-south-1`
+  (46 ms) with the API beside it gets under the target. Owner's call.
 - **An Akira "Item Report: Day Wise" export.** P17's third adapter
   (`petpooja.itemdays.v1`) was built against another restaurant's old file
   because no AKIRA one exists yet. The recipe and theoretical-consumption

@@ -14,7 +14,9 @@ Weights are resolved at the END of the period being scored, so re-opening last
 month uses the weights that were live last month (D9).
 """
 
+import asyncio
 import uuid
+from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Annotated, Any
 
@@ -25,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.business_date import business_date as to_business_date
 from app.core.business_date import business_date_bounds, outlet_now
+from app.core.db import read_with
 from app.core.deps import CurrentUser, CurrentUserDep, DbDep, require_management
 from app.core.errors import ForbiddenError, NotFoundError
 from app.core.pillar_math import Pillar
@@ -128,6 +131,77 @@ async def _weights_at_many(
     return {outlet: _weights(values) for outlet, values in per_outlet.items()}
 
 
+#: Every setting the card needs, from all four pillars, resolved in ONE
+#: statement. Each pillar service keeps its own `*_targets_many` for callers
+#: that want one pillar — the digest — but here they were four round trips
+#: asking the same function about the same outlets at the same instant, and
+#: the wire is what this endpoint waits on.
+_ALL_SETTING_KEYS = sorted(
+    {
+        *_WEIGHT_KEYS,
+        *pillar_service.TARGET_KEYS,
+        *pillar_service.GUEST_TARGET_KEYS,
+        *inv_service.TARGET_KEYS,
+    }
+)
+
+
+@dataclass(frozen=True)
+class _Loaded:
+    """Everything the card computes from, for a set of outlets."""
+
+    counts: dict[uuid.UUID, Any]
+    settings: dict[uuid.UUID, dict[str, Any]]
+    sales_in: dict[uuid.UUID, Any]
+    inv_in: dict[uuid.UUID, Any]
+    guest_in: dict[uuid.UUID, Any]
+    trend: list[dict[str, Any]]
+
+
+async def _nothing() -> list[dict[str, Any]]:
+    return []
+
+
+async def _load(
+    db: AsyncSession,
+    ids: list[uuid.UUID],
+    *,
+    start: date,
+    end: date,
+    trend_for: uuid.UUID | None = None,
+) -> _Loaded:
+    """All of the card's reads, on the wire at once.
+
+    They are independent aggregates over different tables for the same
+    outlets and period, so there is no reason for one to wait for another.
+    Each goes on its own pooled connection (`read_with`) and `gather` sends
+    them together: the wall time is one round trip rather than five or six.
+    Before this the comparison row cost ten sequential trips — 3.4 s with the
+    database in Sydney — and did nothing with the first nine except wait.
+    """
+    _, closed_at = business_date_bounds(end)
+    counts, settings, sales_in, inv_in, guest_in, trend = await asyncio.gather(
+        read_with(db, metrics.outlet_counts_many, outlet_ids=ids, start=start, end=end),
+        read_with(db, resolve_many_outlets, _ALL_SETTING_KEYS, outlet_ids=ids, at=closed_at),
+        read_with(db, pillar_service.sales_inputs_many, outlet_ids=ids, start=start, end=end),
+        read_with(db, inv_service.inventory_inputs_many, outlet_ids=ids, start=start, end=end),
+        read_with(db, pillar_service.guest_inputs_many, outlet_ids=ids, start=start, end=end),
+        (
+            read_with(db, metrics.daily_scores, outlet_id=trend_for, start=start, end=end)
+            if trend_for is not None
+            else _nothing()
+        ),
+    )
+    return _Loaded(
+        counts=counts,
+        settings=settings,
+        sales_in=sales_in,
+        inv_in=inv_in,
+        guest_in=guest_in,
+        trend=trend,
+    )
+
+
 class OutletHealthRow(BaseModel):
     outlet_id: uuid.UUID
     outlet_code: str
@@ -196,29 +270,28 @@ async def outlet_scores(
     if not outlets:
         return []
 
-    # A fixed number of round trips whatever the outlet count (D16). The row
-    # shows BLENDED health since P15, so it needs every pillar's inputs — but
-    # each is one set-based statement, never one per outlet.
+    # A fixed number of round trips whatever the outlet count (D16), and all
+    # of them in flight together. The row shows BLENDED health since P15, so
+    # it needs every pillar's inputs — each is one set-based statement, never
+    # one per outlet.
     ids = [outlet["id"] for outlet in outlets]
-    _, closed_at = business_date_bounds(end)
-    counts = await metrics.outlet_counts_many(db, outlet_ids=ids, start=start, end=end)
-    weights = await _weights_at_many(db, outlet_ids=ids, end=end)
-    sales_in = await pillar_service.sales_inputs_many(db, outlet_ids=ids, start=start, end=end)
-    sales_t = await pillar_service.sales_targets_many(db, outlet_ids=ids, at=closed_at)
-    inv_in = await inv_service.inventory_inputs_many(db, outlet_ids=ids, start=start, end=end)
-    inv_t = await inv_service.inventory_targets_many(db, outlet_ids=ids, at=closed_at)
-    guest_in = await pillar_service.guest_inputs_many(db, outlet_ids=ids, start=start, end=end)
-    guest_t = await pillar_service.guest_targets_many(db, outlet_ids=ids, at=closed_at)
+    loaded = await _load(db, ids, start=start, end=end)
 
     out = []
     for outlet in outlets:
         oid = outlet["id"]
-        sop = outlet_score(counts[oid], weights[oid])
+        values = loaded.settings[oid]
+        weights = _weights(values)
+        sop = outlet_score(loaded.counts[oid], weights)
         by_key: dict[str, float | None] = {
             "sop": sop.score,
-            "sales": sales_pillar(sales_in[oid], sales_t[oid]).score,
-            "inventory": inventory_pillar(inv_in[oid], inv_t[oid]).score,
-            "guest": guest_pillar(guest_in[oid], guest_t[oid]).score,
+            "sales": sales_pillar(loaded.sales_in[oid], pillar_service.targets_from(values)).score,
+            "inventory": inventory_pillar(
+                loaded.inv_in[oid], inv_service.targets_from(values)
+            ).score,
+            "guest": guest_pillar(
+                loaded.guest_in[oid], pillar_service.guest_targets_from(values)
+            ).score,
         }
         health = blended_health(
             [
@@ -230,8 +303,8 @@ async def outlet_scores(
                 )
                 for pillar in PILLARS
             ],
-            green=weights[oid].green,
-            amber=weights[oid].amber,
+            green=weights.green,
+            amber=weights.amber,
         )
         out.append(
             OutletHealthRow(
@@ -268,32 +341,20 @@ async def outlet_health(
     outlet = outlets[0]
 
     start, end = _period(days, to)
-    counts = await metrics.outlet_counts(db, outlet_id=outlet_id, start=start, end=end)
-    weights = await _weights_at(db, outlet_id=outlet_id, end=end)
+    # Every read for the card in flight together, with all four pillars'
+    # settings in one of them — resolved at the period's END (D9), so
+    # re-opening last month scores against last month's targets.
+    loaded = await _load(db, [outlet_id], start=start, end=end, trend_for=outlet_id)
+    values = loaded.settings[outlet_id]
+    weights = _weights(values)
+    counts = loaded.counts[outlet_id]
     score = outlet_score(counts, weights)
-    trend = await metrics.daily_scores(db, outlet_id=outlet_id, start=start, end=end)
+    trend = loaded.trend
 
-    # The second live pillar (P12). Same effective-dating rule as the SOP
-    # weights: targets in force at the period's end.
-    _, closed_at = business_date_bounds(end)
-    sales_in = await pillar_service.sales_inputs_many(
-        db, outlet_ids=[outlet_id], start=start, end=end
-    )
-    sales_t = await pillar_service.sales_targets_many(db, outlet_ids=[outlet_id], at=closed_at)
-    sales = sales_pillar(sales_in[outlet_id], sales_t[outlet_id])
+    sales = sales_pillar(loaded.sales_in[outlet_id], pillar_service.targets_from(values))
     sales_worst = sales.worst_component
-
-    # The third and fourth pillars (P15), same effective-dating rule.
-    inv_in = await inv_service.inventory_inputs_many(
-        db, outlet_ids=[outlet_id], start=start, end=end
-    )
-    inv_t = await inv_service.inventory_targets_many(db, outlet_ids=[outlet_id], at=closed_at)
-    inventory = inventory_pillar(inv_in[outlet_id], inv_t[outlet_id])
-    guest_in = await pillar_service.guest_inputs_many(
-        db, outlet_ids=[outlet_id], start=start, end=end
-    )
-    guest_t = await pillar_service.guest_targets_many(db, outlet_ids=[outlet_id], at=closed_at)
-    guest = guest_pillar(guest_in[outlet_id], guest_t[outlet_id])
+    inventory = inventory_pillar(loaded.inv_in[outlet_id], inv_service.targets_from(values))
+    guest = guest_pillar(loaded.guest_in[outlet_id], pillar_service.guest_targets_from(values))
 
     by_key: dict[str, float | None] = {
         "sop": score.score,

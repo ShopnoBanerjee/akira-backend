@@ -8,8 +8,7 @@ are deciding what to pick up.
 This is not a bug list. Nothing here is broken; broken things get fixed, not
 filed. It is the set of deliberate gaps, and it should shrink.
 
-Last reviewed: 4 Sep 2026, at the close of P18 and the sales-upload
-restaurant guard.
+Last reviewed: 5 Sep 2026, at the close of P20 (the latency pass).
 
 **Keep it honest.** When you close one, delete the entry rather than marking it
 done — the file is only useful if everything in it is still true. When you open
@@ -39,6 +38,26 @@ side by side, which is worth doing once.
 
 **Also:** the Groq key currently in `.env` arrived through a chat transcript
 and should be rotated in the Groq console.
+
+### The database is in Sydney, and the users are in Kolkata
+
+The Supabase project is in `ap-southeast-2`. One round trip from Kolkata is
+310–320 ms; Postgres's own work on any request here is under 2 ms. After P20
+thirty of the thirty-nine GET endpoints are exactly one round trip, and one
+round trip is the floor — **no code change can take a response under 310 ms
+from this topology**, and the owner's target is 90 ms.
+
+From Mumbai (`ap-south-1`) the same hop is 46 ms. With the API deployed
+beside the database, every database call becomes a LAN call and the browser
+pays one 46 ms hop per request: the target becomes ordinary.
+
+**Unblocked by:** a new Supabase project in `ap-south-1`, `pg_dump` from the
+Sydney project and restore into it (Supabase does not move projects; this
+database is small enough that downtime is minutes), `scripts/seed_users.py`
+against the new Auth, new keys into `.env`, and the API deployed in the same
+region (a container on Cloud Run `asia-south1` or equivalent; the Dockerfile
+exists). Rotate the Groq key at the same time — see above. Until then, D26
+records what the code can and cannot do about it.
 
 ### The daily digest does not send mail
 
