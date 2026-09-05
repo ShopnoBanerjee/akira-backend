@@ -1258,3 +1258,50 @@ account, 1,000/day after a one-time $10 top-up; Ollama unlimited but needs
 a machine with the model on it, which the API host today does not have.
 Groq is gone from config, code and `.env`; the leaked key should still be
 revoked in Groq's console.
+
+---
+
+## D29 — Attach rates come from the category report, checked against the bills (P22)
+
+The owner asked for KPIs a business decision can rest on and named the
+beverage-per-ticket and dessert-per-ticket rates. The bill-level data
+could not give them: the Orders Master has no items, the Order Listing has
+names without quantities and only for the weeks it was exported (D21).
+Two Petpooja exports the owner supplied on 5 Sep 2026 could.
+
+**Sales Report: Category Wise** says, for a period, how many BILLS carried
+each category. That IS the attach rate's numerator. Its trap: the Total
+row's "No. of Orders" is the SUM of the per-category counts (1,915 for 588
+bills), so the denominator is not in the file — it comes from
+`sales_orders` for the same period. Petpooja counts on its own calendar
+dates and `business_date` rolls at 05:00, so the edges can differ by a
+late-night bill; the response names the period it divided by.
+
+**Item Wise: Sales Report** — dismissed for bills in D15, rightly — carries
+the menu's own taxonomy: every item under its category with Petpooja's
+code. Loaded into `menu_items`, keyed by the printed name like recipes
+(D24), it turns the Order Listing's names-per-bill into a per-bill category
+join. That gives the same rates a second way, exactly, over the bills whose
+items were uploaded.
+
+**Decision:** report both, labelled. The Petpooja count is the number to
+steer by (it covers every bill); the measured one is the check on it. On
+the real data they agree within a few points on every category
+(Refreshments 53% reported vs 51% measured over 89 bills; Dessert 42 vs 52;
+Gyoza 71 vs 63; Ramen 70 vs 79), which is what makes the reported number
+trustworthy rather than merely official.
+
+What it says about AKIRA, 17 Jul to 5 Sep 2026, 588 bills: a drink is on
+53% of bills, a dessert on 42%, gyoza on 71% — and ramen on only 70%, in a
+ramen restaurant. Yakitori 52%, karaage 20%, donburi 18%. Those are the
+levers; targets for them are deliberately NOT set yet (no settings keys),
+because a target set on the day the baseline was first seen is a guess
+dressed as a goal. Two more exports and a month of watching first.
+
+**Left open, on purpose:** two names on bills ("Donburi Chicken", "Donburi
+Mushroom") are Petpooja's short forms of menu items the map knows under
+their full names. A menu alias — the same treatment `inventory_item_aliases`
+gives stock sheets — is the fix and is filed in OPEN_ITEMS; until then the
+measured Donburi rate is blank rather than wrong. A period's category rows
+are REPLACED as a set on re-upload, because Petpooja recomputes the whole
+report and a category that vanished must not linger.

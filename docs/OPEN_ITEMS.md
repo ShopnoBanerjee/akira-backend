@@ -123,6 +123,20 @@ and stays here:
 
 ---
 
+### Two bill names the menu map does not know
+
+`sales_order_items` carries "Donburi Chicken" and "Donburi Mushroom" — the
+short names Petpooja prints on bills — while the Item Wise report names the
+same dishes "Chicken Karaage Donburi" and "Grilled Miso Mushroom Donburi".
+So the measured (per-bill) attach rate for Donburi is blank, and every
+other measured rate is very slightly low, because two names on 89 bills join
+to nothing. D21 predicted exactly this.
+
+**Unblocked by:** a `menu_item_aliases` table and a line in the Item Wise
+write path, mirroring what `inventory_item_aliases` already does for stock
+sheets — one alias each, entered once. Small, and worth doing before the
+next Order Listing is uploaded so the measured column stops under-counting.
+
 ## Watch, not yet broken
 
 ### The CI actions are on a deprecated Node

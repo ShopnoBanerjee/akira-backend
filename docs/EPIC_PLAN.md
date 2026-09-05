@@ -6,7 +6,7 @@ E0–E9 assumed a monorepo and a smaller admin surface; both changed. See
 
 ## Status
 
-**Everything P0–P17 is done, live on Supabase, pushed, and CI is green.**
+**Everything P0–P22 is done, live on Supabase (Mumbai), pushed, and CI is green.**
 Verify with `git log --oneline | head` rather than trusting this table — it
 sat claiming "P2 next" until P17 had already shipped.
 
@@ -38,6 +38,11 @@ sat claiming "P2 next" until P17 had already shipped.
 | **P15** | All four pillars + the blended health score | D22 |
 | **P16** | Forecasting baseline — median × trend × event | D23 |
 | **P17** | Recipes + theoretical consumption | D24 |
+| **P18** | Security re-review of the Stage 2 surface | — |
+| **P19** | The export has to say which restaurant it is | D25 |
+| **P20** | Latency: spend the wire once | D26 |
+| **P21** | Move to Mumbai; grant posture as one migration | D27 |
+| **P22** | OpenAI-format provider replaces Groq; menu mix and attach rates | D28, D29 |
 
 ### Next
 

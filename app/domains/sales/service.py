@@ -43,7 +43,13 @@ from app.core.deps import CurrentUser
 from app.core.enums import AuditAction, UploadStatus
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from app.core.settings_value import resolve
-from app.domains.sales import petpooja, petpooja_itemdays, petpooja_listing
+from app.domains.sales import (
+    petpooja,
+    petpooja_categories,
+    petpooja_itemdays,
+    petpooja_itemwise,
+    petpooja_listing,
+)
 from app.integrations import storage
 
 XLSX_TYPES = {
@@ -56,6 +62,8 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 SOURCE_ORDERS = "petpooja_orders"
 SOURCE_LISTING = "petpooja_listing"
 SOURCE_ITEMDAYS = "petpooja_itemdays"
+SOURCE_CATEGORIES = "petpooja_categories"
+SOURCE_ITEMWISE = "petpooja_itemwise"
 
 
 @dataclass(frozen=True)
@@ -103,6 +111,18 @@ def inspect_export(data: bytes) -> ExportPreamble:
             if all(m in cells for m in petpooja_listing.LISTING_HEADER_MARKERS):
                 source = SOURCE_LISTING
                 break
+            if all(m in cells for m in petpooja_categories.CATEGORIES_HEADER_MARKERS):
+                source = SOURCE_CATEGORIES
+                break
+            # Item Wise has Category + Item + Qty. and no Date; Item Report:
+            # Day Wise has Item + Date + Qty. and no Category. The Date column
+            # is what tells them apart.
+            if (
+                all(m in cells for m in petpooja_itemwise.ITEMWISE_HEADER_MARKERS)
+                and "Date" not in cells
+            ):
+                source = SOURCE_ITEMWISE
+                break
             if all(m in cells for m in petpooja_itemdays.ITEMDAYS_HEADER_MARKERS):
                 source = SOURCE_ITEMDAYS
                 break
@@ -111,8 +131,9 @@ def inspect_export(data: bytes) -> ExportPreamble:
     if source is None:
         raise ValidationError(
             "This is not a report this system can read. Supported, all from "
-            "Petpooja: the Orders Master Report, the Order Listing report, and "
-            "the Item Report: Day Wise."
+            "Petpooja: the Orders Master Report, the Order Listing report, the "
+            "Item Report: Day Wise, the Item Wise: Sales Report, and the Sales "
+            "Report: Category Wise."
         )
     return ExportPreamble(source=source, restaurant=petpooja.restaurant_in_preamble(seen))
 
@@ -353,6 +374,10 @@ async def parse_upload(db: AsyncSession, upload_id: uuid.UUID) -> dict[str, Any]
             return await _parse_listing(db, upload, data)
         if upload["source"] == SOURCE_ITEMDAYS:
             return await _parse_itemdays(db, upload, data)
+        if upload["source"] == SOURCE_CATEGORIES:
+            return await _parse_categories(db, upload, data)
+        if upload["source"] == SOURCE_ITEMWISE:
+            return await _parse_itemwise(db, upload, data)
         result = petpooja.parse_orders(data, hash_phone=phone_hasher())
         # A second time, at the last point before anything is written. The
         # request-time check cannot cover a re-parse: the file was accepted
@@ -782,6 +807,379 @@ async def _write_item_days(
         inserted += sum(1 for was_new in flags if was_new)
         updated += sum(1 for was_new in flags if not was_new)
     return {"inserted": inserted, "updated": updated}
+
+
+_REPLACE_CATEGORY_PERIOD = text(
+    """
+    delete from sales_category_periods
+     where outlet_id = :outlet_id and period_start = :start and period_end = :end
+    """
+)
+
+_INSERT_CATEGORY_PERIODS = text(
+    """
+    insert into sales_category_periods
+        (outlet_id, upload_id, period_start, period_end, category, orders, items,
+         net_amount_paise, discount_paise, tax_paise, gross_paise, net_sales_paise,
+         share_pct, is_charge)
+    select :outlet_id, :upload_id, :start, :end,
+           c, o, i, na, d, t, g, ns, sp, ch
+      from unnest(
+               cast(:categories as text[]), cast(:orders as int[]), cast(:items as int[]),
+               cast(:net_amounts as bigint[]), cast(:discounts as bigint[]),
+               cast(:taxes as bigint[]), cast(:grosses as bigint[]),
+               cast(:net_sales as bigint[]), cast(:shares as float8[]),
+               cast(:charges as boolean[])
+           ) as u(c, o, i, na, d, t, g, ns, sp, ch)
+    """
+)
+
+
+async def _parse_categories(db: AsyncSession, upload: Any, data: bytes) -> dict[str, Any]:
+    """The Category Wise path: bills-per-category for one period (D29).
+
+    A period's rows are REPLACED as a set, not upserted row by row: Petpooja
+    recomputes the whole report for the range, so a re-export supersedes the
+    old one — including a category that vanished from it.
+    """
+    result = petpooja_categories.parse_categories(data)
+    await check_restaurant(db, outlet_id=upload["outlet_id"], found=result.restaurant)
+    if result.period_start is None or result.period_end is None:
+        raise petpooja.UnreadableExport(
+            "The export has no readable 'Date:' line. A category report is a "
+            "statement about a period; without one it cannot be stored."
+        )
+
+    params = {
+        "outlet_id": upload["outlet_id"],
+        "start": result.period_start,
+        "end": result.period_end,
+    }
+    await db.execute(_REPLACE_CATEGORY_PERIOD, params)
+    rows = result.rows
+    await db.execute(
+        _INSERT_CATEGORY_PERIODS,
+        {
+            **params,
+            "upload_id": upload["id"],
+            "categories": [r.category for r in rows],
+            "orders": [r.orders for r in rows],
+            "items": [r.items for r in rows],
+            "net_amounts": [r.net_amount_paise for r in rows],
+            "discounts": [r.discount_paise for r in rows],
+            "taxes": [r.tax_paise for r in rows],
+            "grosses": [r.gross_paise for r in rows],
+            "net_sales": [r.net_sales_paise for r in rows],
+            "shares": [r.share_pct for r in rows],
+            "charges": [r.is_charge for r in rows],
+        },
+    )
+
+    import json
+
+    await db.execute(
+        text(
+            """
+            update data_uploads
+               set status = 'parsed',
+                   row_count = :rows,
+                   period_start = :start,
+                   period_end = :end,
+                   warnings = cast(:warnings as jsonb),
+                   adapter_version = :adapter,
+                   parsed_net_paise = :net,
+                   reported_net_paise = :reported,
+                   restaurant_name = :restaurant,
+                   parsed_at = now(),
+                   error_detail = null
+             where id = :id
+            """
+        ),
+        {
+            "id": upload["id"],
+            "rows": len(rows),
+            "start": result.period_start,
+            "end": result.period_end,
+            "warnings": json.dumps(result.warnings, default=str),
+            "adapter": result.adapter_version,
+            "net": result.net_sales_paise,
+            "reported": result.reported_net_sales_paise,
+            "restaurant": result.restaurant,
+        },
+    )
+    await db.commit()
+    return {
+        "upload_id": str(upload["id"]),
+        "categories": len(rows),
+        "period": [str(result.period_start), str(result.period_end)],
+        "net_sales_paise": result.net_sales_paise,
+        "warnings": len(result.warnings),
+        "adapter": result.adapter_version,
+    }
+
+
+_UPSERT_MENU_ITEMS = text(
+    """
+    insert into menu_items (name, category, petpooja_code, upload_id)
+    select n, c, k, :upload_id
+      from unnest(cast(:names as text[]), cast(:categories as text[]),
+                  cast(:codes as text[])) as u(n, c, k)
+    on conflict (name) do update set
+        category      = excluded.category,
+        petpooja_code = coalesce(excluded.petpooja_code, menu_items.petpooja_code),
+        upload_id     = excluded.upload_id,
+        updated_at    = now()
+    returning (xmax = 0) as inserted
+    """
+)
+
+
+async def _parse_itemwise(db: AsyncSession, upload: Any, data: bytes) -> dict[str, Any]:
+    """The Item Wise path: the menu's own taxonomy (D29).
+
+    Brand-level, keyed by Petpooja's printed name, upserted: an item that
+    moves category is corrected, one that disappears from the menu keeps its
+    last known category so old bills still join.
+    """
+    result = petpooja_itemwise.parse_itemwise(data)
+    await check_restaurant(db, outlet_id=upload["outlet_id"], found=result.restaurant)
+    flags = (
+        (
+            await db.execute(
+                _UPSERT_MENU_ITEMS,
+                {
+                    "upload_id": upload["id"],
+                    "names": [i.item_name for i in result.items],
+                    "categories": [i.category for i in result.items],
+                    "codes": [i.petpooja_code for i in result.items],
+                },
+            )
+        )
+        .scalars()
+        .all()
+    )
+    inserted = sum(1 for f in flags if f)
+
+    import json
+
+    await db.execute(
+        text(
+            """
+            update data_uploads
+               set status = 'parsed',
+                   row_count = :rows,
+                   period_start = :start,
+                   period_end = :end,
+                   warnings = cast(:warnings as jsonb),
+                   adapter_version = :adapter,
+                   parsed_net_paise = :net,
+                   restaurant_name = :restaurant,
+                   parsed_at = now(),
+                   error_detail = null
+             where id = :id
+            """
+        ),
+        {
+            "id": upload["id"],
+            "rows": len(result.items),
+            "start": result.period_start,
+            "end": result.period_end,
+            "warnings": json.dumps(result.warnings, default=str),
+            "adapter": result.adapter_version,
+            "net": sum(i.net_paise for i in result.items),
+            "restaurant": result.restaurant,
+        },
+    )
+    await db.commit()
+    return {
+        "upload_id": str(upload["id"]),
+        "menu_items": len(result.items),
+        "inserted": inserted,
+        "updated": len(flags) - inserted,
+        "categories": sorted(result.categories),
+        "warnings": len(result.warnings),
+        "adapter": result.adapter_version,
+    }
+
+
+async def menu_mix(
+    db: AsyncSession,
+    user: CurrentUser,
+    *,
+    outlet_id: uuid.UUID,
+    date_from: date | None,
+    date_to: date | None,
+) -> dict[str, Any]:
+    """Category attach for an outlet, two ways, each labelled with its source.
+
+    **Reported** — Petpooja's Category Wise rows for one period: bills that
+    carried the category, divided by the bills sales_orders holds for that
+    period. The most recent period is used unless the caller names one that
+    was uploaded. Petpooja counts on its own calendar dates and business_date
+    rolls at 05:00, so the denominator can differ by a late-night bill or two
+    at the edges; the response says which period it used.
+
+    **Measured** — from the bills themselves: sales_order_items (names per
+    bill, D21) joined to menu_items (name → category). Exact per bill, but
+    only over bills whose items were uploaded. Names on bills that the menu
+    map does not know are listed, because an unmapped item silently lowers
+    every rate.
+    """
+    if not user.can_access_outlet(outlet_id):
+        raise ForbiddenError("You do not have access to that outlet.")
+
+    period = (
+        (
+            await db.execute(
+                text(
+                    """
+                    select period_start, period_end
+                      from sales_category_periods
+                     where outlet_id = :o
+                       and (cast(:s as date) is null or period_start = :s)
+                       and (cast(:e as date) is null or period_end = :e)
+                     order by period_end desc, period_start asc
+                     limit 1
+                    """
+                ),
+                {"o": outlet_id, "s": date_from, "e": date_to},
+            )
+        )
+        .mappings()
+        .first()
+    )
+
+    reported: dict[str, Any] | None = None
+    if period is not None:
+        start, end = period["period_start"], period["period_end"]
+        bills = int(
+            await db.scalar(
+                text(
+                    "select count(*) from sales_orders"
+                    " where outlet_id = :o and business_date between :s and :e"
+                ),
+                {"o": outlet_id, "s": start, "e": end},
+            )
+            or 0
+        )
+        rows = (
+            await db.execute(
+                text(
+                    """
+                    select category, orders, items, net_sales_paise, gross_paise,
+                           cast(share_pct as float8) as share_pct, is_charge
+                      from sales_category_periods
+                     where outlet_id = :o and period_start = :s and period_end = :e
+                     order by is_charge, orders desc, category
+                    """
+                ),
+                {"o": outlet_id, "s": start, "e": end},
+            )
+        ).mappings()
+        categories = []
+        for r in rows:
+            orders = int(r["orders"])
+            categories.append(
+                {
+                    "category": r["category"],
+                    "orders": orders,
+                    "share_of_bills": (round(orders / bills, 4) if bills and orders else None),
+                    "items": int(r["items"]),
+                    "items_per_order": (round(int(r["items"]) / orders, 2) if orders else None),
+                    "net_sales_paise": int(r["net_sales_paise"]),
+                    "avg_spend_per_bill_paise": (
+                        int(r["net_sales_paise"]) // orders if orders else None
+                    ),
+                    "share_of_net_pct": r["share_pct"],
+                    "is_charge": bool(r["is_charge"]),
+                }
+            )
+        reported = {
+            "period_start": start,
+            "period_end": end,
+            "bills_in_period": bills,
+            "categories": categories,
+        }
+
+    # Measured per bill, over whatever window the caller asked for (or the
+    # reported period, or everything).
+    m_start = date_from or (period["period_start"] if period else None)
+    m_end = date_to or (period["period_end"] if period else None)
+    measured_rows = (
+        (
+            await db.execute(
+                text(
+                    """
+                with bills as (
+                    select o.id
+                      from sales_orders o
+                     where o.outlet_id = :o
+                       and (cast(:s as date) is null or o.business_date >= :s)
+                       and (cast(:e as date) is null or o.business_date <= :e)
+                       and exists (select 1 from sales_order_items i where i.order_id = o.id)
+                ),
+                cat as (
+                    select i.order_id, m.category
+                      from sales_order_items i
+                      join bills b on b.id = i.order_id
+                      join menu_items m on m.name = i.item_name
+                )
+                select category,
+                       count(distinct order_id) as bills_with,
+                       (select count(*) from bills) as bills_measured
+                  from cat
+                 group by category
+                 order by bills_with desc, category
+                """
+                ),
+                {"o": outlet_id, "s": m_start, "e": m_end},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    bills_measured = int(measured_rows[0]["bills_measured"]) if measured_rows else 0
+    unmapped = [
+        r["item_name"]
+        for r in (
+            await db.execute(
+                text(
+                    """
+                    select distinct i.item_name
+                      from sales_order_items i
+                      join sales_orders o on o.id = i.order_id
+                     where o.outlet_id = :o
+                       and not exists (select 1 from menu_items m where m.name = i.item_name)
+                     order by 1
+                    """
+                ),
+                {"o": outlet_id},
+            )
+        ).mappings()
+    ]
+    measured = {
+        "from": m_start,
+        "to": m_end,
+        "bills_measured": bills_measured,
+        "categories": [
+            {
+                "category": r["category"],
+                "bills_with": int(r["bills_with"]),
+                "share_of_bills": round(int(r["bills_with"]) / bills_measured, 4)
+                if bills_measured
+                else None,
+            }
+            for r in measured_rows
+        ],
+        "unmapped_item_names": unmapped,
+    }
+    menu_known = int(await db.scalar(text("select count(*) from menu_items")) or 0)
+    return {
+        "outlet_id": str(outlet_id),
+        "menu_items_known": menu_known,
+        "reported": reported,
+        "measured": measured,
+    }
 
 
 async def background_parse(upload_id: uuid.UUID, outlet_id: uuid.UUID) -> None:

@@ -276,7 +276,7 @@ this workflow. Read the file, run it inside a transaction with asyncpg using
 
 ## 7. What is built (P0–P17)
 
-**98 API operations across 80 paths. 36 tables, 21 migrations. All live on
+**99 API operations across 81 paths. 38 tables, 22 migrations. All live on
 Supabase, and CI is green.** Test counts move every epic — run the suites
 rather than quoting this line.
 

@@ -287,6 +287,81 @@ async def items(
     return [ItemSummaryRow(**r) for r in rows]
 
 
+class MenuMixCategory(BaseModel):
+    category: str
+    #: Bills that carried the category, per Petpooja's own count.
+    orders: int
+    #: orders ÷ bills sales_orders holds for the same period. The attach rate.
+    share_of_bills: float | None
+    items: int
+    items_per_order: float | None
+    net_sales_paise: int
+    avg_spend_per_bill_paise: int | None
+    #: Petpooja's own "Percentage (%)" — share of net sales, not of bills.
+    share_of_net_pct: float | None
+    #: Container Charge / Round Off / Waived Off: money, not menu.
+    is_charge: bool
+
+
+class MenuMixReported(BaseModel):
+    period_start: date
+    period_end: date
+    bills_in_period: int
+    categories: list[MenuMixCategory]
+
+
+class MenuMixMeasuredCategory(BaseModel):
+    category: str
+    bills_with: int
+    share_of_bills: float | None
+
+
+class MenuMixMeasured(BaseModel):
+    from_: date | None = Field(default=None, alias="from")
+    to: date | None = None
+    #: Bills whose item names have been uploaded (Order Listing, D21).
+    bills_measured: int
+    categories: list[MenuMixMeasuredCategory]
+    #: Names on bills that menu_items does not know. Each one silently lowers
+    #: every measured rate until an Item Wise export that names it is uploaded.
+    unmapped_item_names: list[str]
+
+    model_config = {"populate_by_name": True}
+
+
+class MenuMixResponse(BaseModel):
+    outlet_id: uuid.UUID
+    menu_items_known: int
+    reported: MenuMixReported | None
+    measured: MenuMixMeasured
+
+
+@router.get(
+    "/menu-mix",
+    response_model=MenuMixResponse,
+    response_model_by_alias=True,
+    dependencies=[Depends(require_management)],
+    summary="Category attach: share of bills carrying each category",
+)
+async def menu_mix(
+    db: DbDep,
+    user: CurrentUserDep,
+    outlet_id: Annotated[uuid.UUID, Query()],
+    date_from: date | None = Query(default=None, alias="from"),
+    date_to: date | None = Query(default=None, alias="to"),
+) -> MenuMixResponse:
+    """The beverage-per-ticket, dessert-per-ticket numbers (D29), two ways
+    and labelled: Petpooja's own per-period count of bills carrying each
+    category, and the same thing measured on the bills whose items were
+    uploaded. Empty until a Category Wise report has been uploaded; the
+    measured half stays empty until an Item Wise report has taught the menu
+    map and an Order Listing has supplied names per bill."""
+    payload = await service.menu_mix(
+        db, user, outlet_id=outlet_id, date_from=date_from, date_to=date_to
+    )
+    return MenuMixResponse.model_validate(payload)
+
+
 @router.get(
     "/forecast",
     response_model=list[ForecastDay],

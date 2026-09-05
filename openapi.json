@@ -2975,6 +2975,89 @@
         }
       }
     },
+    "/sales/menu-mix": {
+      "get": {
+        "tags": [
+          "sales"
+        ],
+        "summary": "Category attach: share of bills carrying each category",
+        "description": "The beverage-per-ticket, dessert-per-ticket numbers (D29), two ways\nand labelled: Petpooja's own per-period count of bills carrying each\ncategory, and the same thing measured on the bills whose items were\nuploaded. Empty until a Category Wise report has been uploaded; the\nmeasured half stays empty until an Item Wise report has taught the menu\nmap and an Order Listing has supplied names per bill.",
+        "operationId": "menu_mix_sales_menu_mix_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outlet_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Outlet Id"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MenuMixResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/sales/forecast": {
       "get": {
         "tags": [
@@ -7436,6 +7519,237 @@
           "outlets"
         ],
         "title": "MeResponse"
+      },
+      "MenuMixCategory": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "orders": {
+            "type": "integer",
+            "title": "Orders"
+          },
+          "share_of_bills": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Of Bills"
+          },
+          "items": {
+            "type": "integer",
+            "title": "Items"
+          },
+          "items_per_order": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items Per Order"
+          },
+          "net_sales_paise": {
+            "type": "integer",
+            "title": "Net Sales Paise"
+          },
+          "avg_spend_per_bill_paise": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Spend Per Bill Paise"
+          },
+          "share_of_net_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Of Net Pct"
+          },
+          "is_charge": {
+            "type": "boolean",
+            "title": "Is Charge"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "orders",
+          "share_of_bills",
+          "items",
+          "items_per_order",
+          "net_sales_paise",
+          "avg_spend_per_bill_paise",
+          "share_of_net_pct",
+          "is_charge"
+        ],
+        "title": "MenuMixCategory"
+      },
+      "MenuMixMeasured": {
+        "properties": {
+          "from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From"
+          },
+          "to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To"
+          },
+          "bills_measured": {
+            "type": "integer",
+            "title": "Bills Measured"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/MenuMixMeasuredCategory"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "unmapped_item_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unmapped Item Names"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bills_measured",
+          "categories",
+          "unmapped_item_names"
+        ],
+        "title": "MenuMixMeasured"
+      },
+      "MenuMixMeasuredCategory": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "bills_with": {
+            "type": "integer",
+            "title": "Bills With"
+          },
+          "share_of_bills": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Of Bills"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "bills_with",
+          "share_of_bills"
+        ],
+        "title": "MenuMixMeasuredCategory"
+      },
+      "MenuMixReported": {
+        "properties": {
+          "period_start": {
+            "type": "string",
+            "format": "date",
+            "title": "Period Start"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Period End"
+          },
+          "bills_in_period": {
+            "type": "integer",
+            "title": "Bills In Period"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/MenuMixCategory"
+            },
+            "type": "array",
+            "title": "Categories"
+          }
+        },
+        "type": "object",
+        "required": [
+          "period_start",
+          "period_end",
+          "bills_in_period",
+          "categories"
+        ],
+        "title": "MenuMixReported"
+      },
+      "MenuMixResponse": {
+        "properties": {
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outlet Id"
+          },
+          "menu_items_known": {
+            "type": "integer",
+            "title": "Menu Items Known"
+          },
+          "reported": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MenuMixReported"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "measured": {
+            "$ref": "#/components/schemas/MenuMixMeasured"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outlet_id",
+          "menu_items_known",
+          "reported",
+          "measured"
+        ],
+        "title": "MenuMixResponse"
       },
       "OrderRow": {
         "properties": {
