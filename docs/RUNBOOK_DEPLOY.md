@@ -163,6 +163,34 @@ migrations to keep working (they change; the pooler accepts them by default),
 and your own address for `scripts/backup_db.py`. Do this AFTER the first
 deploy is verified, because a wrong entry locks out the API too.
 
+### 2g. As configured on 6 Sep 2026 (the as-run record)
+
+What exists, by name only; no value is written anywhere in either repository.
+
+| Where | Item | Holds |
+|---|---|---|
+| Render, service `akira-ops-api` (Singapore, free, id `srv-…` in the dashboard URL) | Environment tab | `DATABASE_URL` (session pooler, asyncpg scheme), `SUPABASE_SECRET_KEY`, `PHONE_HASH_SALT`, `GEMINI_API_KEY`; the blueprint's plain values (`ENV`, `PORT`, `CORS_ORIGINS`, Supabase URL/publishable key/JWKS, providers) |
+| Render, Account Settings | API key | used only by the backend deploy job |
+| GitHub `akira-backend`, environment `production` (reviewer: ShopnoBanerjee) | secrets | `RENDER_API_KEY`, `RENDER_SERVICE_ID`, `MIGRATIONS_DATABASE_URL` |
+| GitHub `akira-backend`, repository variables | | `API_URL` = `https://akira-ops-api.onrender.com`, `DEPLOY_ENABLED` = `true` |
+| GitHub `akira-frontend`, environment `production` (reviewer: ShopnoBanerjee) | secrets | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` |
+| GitHub `akira-frontend`, environment `production` | variables | `CF_PAGES_PROJECT` = `akira-ops`, `WEB_URL` = `https://akira-ops.pages.dev`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_API_BASE_URL` |
+| GitHub `akira-frontend`, repository variables | | `DEPLOY_ENABLED` = `true` |
+| Cloudflare, account `e1f7f46f…` | Pages project `akira-ops` | created by the pipeline's first run; production branch `main` |
+| Supabase project `zvskxgmmlahhybzpcicl` | `schema_migrations` | baselined 0001–0024 through the pooler |
+
+Live since that evening: API `https://akira-ops-api.onrender.com` (deployed
+by the approved pipeline run, `/readyz` database ok), web
+`https://akira-ops.pages.dev` (serving with CSP, HSTS, noindex). The first
+frontend deploy job went red on a one-shot header check that has since been
+made to retry; the site it uploaded is the live one.
+
+**Rotate at go-live**, because each has been through a chat transcript: the
+database password, `SUPABASE_SECRET_KEY`, `GEMINI_API_KEY`, the Cloudflare
+API token, the Render API key. Tokens are free to reissue; the database
+password and secret key change in the Supabase dashboard and then in Render's
+Environment tab and GitHub's `MIGRATIONS_DATABASE_URL`.
+
 ## 3. Migrations, from now on
 
 Add a file to `supabase/migrations/` (append-only, next number), commit,
