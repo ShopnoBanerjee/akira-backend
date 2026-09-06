@@ -85,11 +85,14 @@ hour, once.
    fly tokens create deploy -x 8760h        # a deploy-only token, one year
    ```
    Keep the token for 2c.
-2. **Cloudflare.** Create an account, then in the dashboard: Workers &
-   Pages, Create, Pages, "Upload assets" (direct upload), project name
-   `akira-ops`. Then My Profile, API Tokens, Create Token, template
-   "Edit Cloudflare Workers" (it includes Pages), and note your Account ID
-   from the Workers & Pages overview.
+2. **Cloudflare.** Create an account. Do **not** use the "Create an app /
+   connect a repository" wizard: that makes Cloudflare build and deploy on
+   every push by itself, around the approval gate. The pipeline creates the
+   Pages project on its first run. You need two values: your **Account ID**
+   (Workers & Pages overview, right-hand column, or the `dash.cloudflare.com/
+   <account id>/...` part of any dashboard URL) and an **API token**: My
+   Profile, API Tokens, Create Token, template "Edit Cloudflare Workers",
+   Continue, Create Token, copy it once.
 3. **Supabase.** Project Settings, Database, Connect: copy the **Session
    pooler** string (host `aws-0-ap-south-1.pooler.supabase.com`, port
    **5432**, user `postgres.zvskxgmmlahhybzpcicl`). GitHub runners are
