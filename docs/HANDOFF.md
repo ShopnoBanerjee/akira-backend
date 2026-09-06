@@ -607,6 +607,15 @@ organisations through the services, RLS as the other tenant). Hand-built
 users in tests carry `organisation_id=DEV_ORG` and
 `organisation_outlet_ids=dev_outlet_ids()` from `tests/conftest.py`.
 
+### Authentication, all of it in one place
+
+`docs/AUTHENTICATION.md` is the complete reference: the four kinds of caller,
+how a token is verified, how an identity and its outlet reach are resolved,
+who owes a second factor, the shared tablet's PIN and actor assertion, what
+each session may then do, and which login exists today. Read it before
+changing anything in `app/core/security.py`, `app/core/deps.py` or
+`app/core/actor.py`.
+
 ## 10. NEXT: go-live
 
 P0–P26a are done (section 7). P26a (7 Sep 2026, D33) made the database
