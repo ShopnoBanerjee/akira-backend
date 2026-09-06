@@ -39,6 +39,12 @@ class TokenClaims:
     raw: dict[str, Any]
 
     @property
+    def assurance_level(self) -> str:
+        """Supabase's `aal` claim: `aal1` after a password, `aal2` after a
+        second factor. Owners and platform admins must reach aal2 (D33)."""
+        return str(self.raw.get("aal") or "aal1")
+
+    @property
     def is_anonymous(self) -> bool:
         """Supabase can mint tokens for anonymous sign-ins. Those must never
         reach an application endpoint."""

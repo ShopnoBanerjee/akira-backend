@@ -12,12 +12,16 @@ drop the database they create.
 import asyncio
 import os
 import re
+import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 
 import asyncpg
 import pytest
 import pytest_asyncio
+
+from app.core.deps import CurrentUser, OutletMembership
+from app.core.enums import UserRole
 
 ROOT = Path(__file__).resolve().parent.parent
 MIGRATIONS = sorted((ROOT / "supabase" / "migrations").glob("[0-9]*.sql"))
@@ -68,6 +72,42 @@ def event_loop():  # type: ignore[no-untyped-def]
     loop.close()
 
 
+#: The development organisation (0026): where every seeded outlet lives.
+DEV_ORG = uuid.UUID("a1000000-0000-4000-8000-000000000002")
+_dev_outlets: frozenset[uuid.UUID] = frozenset()
+
+
+def dev_outlet_ids() -> frozenset[uuid.UUID]:
+    """Every seeded outlet's id. A test that builds an owner by hand gives it
+    these as `organisation_outlet_ids`, so its reach matches what the identity
+    loader would compute (D33). Filled once the session database is built."""
+    return _dev_outlets
+
+
+def dev_user(
+    role: UserRole = UserRole.OWNER,
+    *,
+    profile_id: uuid.UUID | None = None,
+    full_name: str = "Owner",
+    email: str | None = None,
+    memberships: list[OutletMembership] | None = None,
+) -> CurrentUser:
+    """A caller of the development organisation, as the identity loader would
+    build one."""
+    return CurrentUser(
+        profile_id=profile_id or uuid.uuid4(),
+        full_name=full_name,
+        email=email,
+        global_role=role,
+        is_active=True,
+        memberships=memberships or [],
+        organisation_id=DEV_ORG,
+        organisation_slug="akira-dev",
+        organisation_name="AKIRA (development)",
+        organisation_outlet_ids=dev_outlet_ids(),
+    )
+
+
 @pytest_asyncio.fixture(scope="session")
 async def migrated_db() -> AsyncIterator[str]:
     """A freshly built database. Yields its DSN."""
@@ -96,6 +136,13 @@ async def migrated_db() -> AsyncIterator[str]:
                 await conn.execute(path.read_text(encoding="utf-8"))
             except Exception as exc:
                 pytest.fail(f"seed {path.name} failed to apply: {exc}")
+        global _dev_outlets
+        _dev_outlets = frozenset(
+            r["id"]
+            for r in await conn.fetch(
+                "select id from outlets where organisation_id = $1 and deleted_at is null", DEV_ORG
+            )
+        )
     finally:
         await conn.close()
 

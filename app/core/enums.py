@@ -40,6 +40,9 @@ class UserRole(StrEnum):
     OUTLET_MANAGER = "outlet_manager"
     SHIFT_LEAD = "shift_lead"
     STAFF = "staff"
+    #: Creates organisations and their owners; belongs to none (D33). Last,
+    #: because Postgres appends enum values and the parity test reads order.
+    PLATFORM_ADMIN = "platform_admin"
 
     @property
     def rank(self) -> int:
@@ -57,6 +60,7 @@ _ROLE_RANK: dict[UserRole, int] = {
     UserRole.OUTLET_MANAGER: 30,
     UserRole.OPS_MANAGER: 40,
     UserRole.OWNER: 50,
+    UserRole.PLATFORM_ADMIN: 60,
 }
 
 #: Roles that see every outlet without an explicit membership row.
@@ -151,6 +155,8 @@ class AuditAction(StrEnum):
     APPROVE = "approve"
     REJECT = "reject"
     LOGIN = "login"
+    #: A platform admin looked inside an organisation (D33).
+    READ = "read"
 
 
 class AiVerdict(StrEnum):
@@ -181,8 +187,11 @@ class InventoryUnit(StrEnum):
 
 
 class SettingScope(StrEnum):
+    #: Platform-wide: the scheduler's own times. Nothing a tenant owns.
     GLOBAL = "global"
     OUTLET = "outlet"
+    #: One organisation; what "global" meant when there was one brand (D33).
+    ORGANISATION = "organisation"
 
 
 class IntegrityFlag(StrEnum):

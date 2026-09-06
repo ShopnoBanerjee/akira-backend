@@ -24,6 +24,8 @@ from app.core.security import TokenClaims
 
 pytestmark = pytest.mark.asyncio
 
+ORG = uuid.UUID("a1000000-0000-4000-8000-000000000002")
+
 
 class _Result:
     def __init__(self, row: dict[str, Any] | None) -> None:
@@ -67,6 +69,13 @@ def _profile_row(profile_id: uuid.UUID, *, active: bool = True, role: str = "own
         "is_active": active,
         "deleted_at": None,
         "memberships": json.dumps([]),
+        "organisation_id": ORG,
+        "organisation_slug": "akira-dev",
+        "organisation_name": "AKIRA (development)",
+        "organisation_active": True,
+        "organisation_deleted_at": None,
+        "organisation_onboarded_at": None,
+        "organisation_outlet_ids": [],
     }
 
 
@@ -81,6 +90,13 @@ def _device_row(device_id: uuid.UUID) -> dict:
         "is_active": None,
         "deleted_at": None,
         "memberships": None,
+        "organisation_id": ORG,
+        "organisation_slug": "akira-dev",
+        "organisation_name": "AKIRA (development)",
+        "organisation_active": True,
+        "organisation_deleted_at": None,
+        "organisation_onboarded_at": None,
+        "organisation_outlet_ids": [],
     }
 
 

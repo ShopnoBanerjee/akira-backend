@@ -107,7 +107,8 @@ async def update_profile(
 _LIST_USERS = """
     select p.id as profile_id, p.full_name, p.phone, p.employee_code,
            p.global_role, p.is_active, p.last_seen_at,
-           p.pin_hash is not null as has_pin, can_restart_training
+           p.pin_hash is not null as has_pin, can_restart_training,
+           p.organisation_id
       from profiles p
      where p.deleted_at is null
 """
@@ -120,10 +121,16 @@ async def list_users(
     role: str | None,
     is_active: bool | None,
     search: str | None,
+    organisation_id: uuid.UUID | None = None,
 ) -> list[dict[str, Any]]:
-    """outlet_ids None means every outlet — only for owner and ops_manager."""
+    """outlet_ids None means every outlet of the organisation (owner and
+    ops_manager); organisation_id None means every organisation (platform)."""
     clauses: list[str] = []
     params: dict[str, Any] = {}
+
+    if organisation_id is not None:
+        clauses.append("p.organisation_id = :org")
+        params["org"] = organisation_id
 
     if outlet_ids is not None:
         clauses.append(
@@ -200,13 +207,17 @@ async def upsert_profile(
     global_role: str,
     employee_code: str | None,
     phone: str | None,
+    organisation_id: uuid.UUID,
 ) -> None:
+    """A profile is born into one organisation and never moves (D33): an
+    existing profile keeps its organisation, whoever re-invites it."""
     await db.execute(
         text(
             """
             insert into profiles
-                (id, full_name, global_role, employee_code, phone, is_active)
-            values (:id, :full_name, cast(:global_role as user_role), :employee_code, :phone, true)
+                (id, full_name, global_role, employee_code, phone, is_active, organisation_id)
+            values (:id, :full_name, cast(:global_role as user_role), :employee_code, :phone,
+                    true, :organisation_id)
             on conflict (id) do update set
                 full_name     = excluded.full_name,
                 global_role   = excluded.global_role,
@@ -222,8 +233,29 @@ async def upsert_profile(
             "global_role": global_role,
             "employee_code": employee_code,
             "phone": phone,
+            "organisation_id": organisation_id,
         },
     )
+
+
+async def people_headroom(db: AsyncSession, organisation_id: uuid.UUID) -> tuple[int, int]:
+    """(people in use, cap) for the organisation."""
+    row = (
+        await db.execute(
+            text(
+                """
+                select (select count(*) from profiles p
+                         where p.organisation_id = g.id and p.deleted_at is null) as used,
+                       g.max_people
+                  from organisations g where g.id = :org
+                """
+            ),
+            {"org": organisation_id},
+        )
+    ).first()
+    if row is None:
+        return 0, 0
+    return int(row[0]), int(row[1])
 
 
 async def patch_profile(db: AsyncSession, profile_id: uuid.UUID, changes: dict[str, Any]) -> None:

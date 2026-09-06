@@ -325,10 +325,11 @@ class AddMenuAliasRequest(BaseModel):
     dependencies=[Depends(require_management)],
     summary="The menu map, with the bill spellings that point at each item",
 )
-async def menu_items(db: DbDep) -> list[MenuItemRow]:
-    """Brand-level: one menu across outlets (D29). Empty until an Item Wise
-    report has been uploaded."""
-    return [MenuItemRow(**r) for r in await service.list_menu_items(db)]
+async def menu_items(db: DbDep, user: CurrentUserDep) -> list[MenuItemRow]:
+    """Organisation-level: one menu across its outlets (D29, D33). Empty until
+    an Item Wise report has been uploaded."""
+    rows = await service.list_menu_items(db, organisation_id=user.organisation_id)
+    return [MenuItemRow(**r) for r in rows]
 
 
 @router.post(
@@ -533,8 +534,11 @@ async def create_forecast_event(
         raise ForbiddenError("You do not have access to that outlet.")
     if body.outlet_id is None and not user.is_global:
         raise ForbiddenError("Only a global role can flag an event for every outlet.")
+    if user.organisation_id is None:
+        raise ForbiddenError("Event flags belong to an organisation; this login has none.")
     row = await forecast_service.create_event(
         db,
+        organisation_id=user.organisation_id,
         outlet_id=body.outlet_id,
         event_date=body.event_date,
         multiplier=body.multiplier,
@@ -569,7 +573,7 @@ async def delete_forecast_event(
     row = (
         (
             await db.execute(
-                text("select outlet_id from forecast_events where id = :id"),
+                text("select outlet_id, organisation_id from forecast_events where id = :id"),
                 {"id": event_id},
             )
         )
@@ -577,6 +581,8 @@ async def delete_forecast_event(
         .first()
     )
     if row is None:
+        raise NotFoundError("That event flag does not exist.")
+    if not user.is_platform_admin and row["organisation_id"] != user.organisation_id:
         raise NotFoundError("That event flag does not exist.")
     if row["outlet_id"] is not None and not user.can_access_outlet(row["outlet_id"]):
         raise ForbiddenError("You do not have access to that outlet.")

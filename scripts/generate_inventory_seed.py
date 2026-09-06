@@ -326,21 +326,34 @@ def main() -> int:
     add("-- " + "-" * 73)
     add("")
 
-    add("insert into inventory_departments (key, label, label_bn, sort_order) values")
+    add("-- Seeded catalogue belongs to the development organisation (0026).")
+    add(
+        "insert into inventory_departments (organisation_id, key, label, label_bn, sort_order) values"
+    )
     rows = [
-        f"    ({sql_str(k)}, {sql_str(la)}, {sql_str(bn)}, {o})" for k, la, bn, o in DEPARTMENTS
+        f"    ('a1000000-0000-4000-8000-000000000002', {sql_str(k)}, {sql_str(la)}, {sql_str(bn)}, {o})"
+        for k, la, bn, o in DEPARTMENTS
     ]
     add(",\n".join(rows))
-    add("on conflict (key) do update set")
+    add(
+        "on conflict (coalesce(organisation_id, '00000000-0000-0000-0000-000000000000'), key) do update set"
+    )
     add("    label = excluded.label,")
     add("    label_bn = excluded.label_bn,")
     add("    sort_order = excluded.sort_order;")
     add("")
 
-    add("insert into inventory_categories (key, label, label_bn, sort_order) values")
-    rows = [f"    ({sql_str(k)}, {sql_str(la)}, {sql_str(bn)}, {o})" for k, la, bn, o in CATEGORIES]
+    add(
+        "insert into inventory_categories (organisation_id, key, label, label_bn, sort_order) values"
+    )
+    rows = [
+        f"    ('a1000000-0000-4000-8000-000000000002', {sql_str(k)}, {sql_str(la)}, {sql_str(bn)}, {o})"
+        for k, la, bn, o in CATEGORIES
+    ]
     add(",\n".join(rows))
-    add("on conflict (key) do update set")
+    add(
+        "on conflict (coalesce(organisation_id, '00000000-0000-0000-0000-000000000000'), key) do update set"
+    )
     add("    label = excluded.label,")
     add("    label_bn = excluded.label_bn,")
     add("    sort_order = excluded.sort_order;")
@@ -348,8 +361,12 @@ def main() -> int:
 
     add("-- Items are matched to their department and category by key, so this file")
     add("-- never hardcodes a uuid.")
-    add("insert into inventory_items (name, name_bn, department_id, category_id, unit, notes)")
-    add("select v.name, v.name_bn, d.id, c.id, v.unit::inventory_unit, v.notes")
+    add(
+        "insert into inventory_items (organisation_id, name, name_bn, department_id, category_id, unit, notes)"
+    )
+    add(
+        "select 'a1000000-0000-4000-8000-000000000002', v.name, v.name_bn, d.id, c.id, v.unit::inventory_unit, v.notes"
+    )
     add("from (values")
     rows = [
         "    ("

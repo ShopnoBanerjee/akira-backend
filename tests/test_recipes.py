@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from app.core.errors import ValidationError
 from app.domains.inventory import anomalies_service, recipes_service
 from app.domains.inventory.consumption import zero_sales_consumption
+from tests.conftest import DEV_ORG
 
 pytestmark = pytest.mark.asyncio
 
@@ -167,6 +168,7 @@ class TestRecipeCrud:
 
         await recipes_service.save_recipe(
             session,
+            organisation_id=DEV_ORG,
             menu_item_name="Akira Shoyu Ramen (pork)",
             lines=[
                 {"item_id": pork, "qty_per_unit": 120},
@@ -179,6 +181,7 @@ class TestRecipeCrud:
         await session.commit()
         await recipes_service.save_recipe(
             session,
+            organisation_id=DEV_ORG,
             menu_item_name="Akira Shoyu Ramen (pork)",
             lines=[{"item_id": pork, "qty_per_unit": 140}],
             notes="corrected",
@@ -187,7 +190,7 @@ class TestRecipeCrud:
         )
         await session.commit()
 
-        recipes = await recipes_service.list_recipes(session)
+        recipes = await recipes_service.list_recipes(session, organisation_id=DEV_ORG)
         assert len(recipes) == 1
         lines = recipes[0]["lines"]
         assert len(lines) == 1
@@ -198,6 +201,7 @@ class TestRecipeCrud:
         with pytest.raises(ValidationError, match="at least one"):
             await recipes_service.save_recipe(
                 session,
+                organisation_id=DEV_ORG,
                 menu_item_name="Empty Dish",
                 lines=[],
                 notes=None,
@@ -213,6 +217,7 @@ class TestRecipeCrud:
         await _sold(session, outlet, "2026-08-21", "Unmapped Special", 2)
         await recipes_service.save_recipe(
             session,
+            organisation_id=DEV_ORG,
             menu_item_name="Mapped Ramen",
             lines=[{"item_id": pork, "qty_per_unit": 100}],
             notes=None,
@@ -221,7 +226,8 @@ class TestRecipeCrud:
         )
         await session.commit()
 
-        names = [r["item_name"] for r in await recipes_service.unmapped_names(session)]
+        unmapped = await recipes_service.unmapped_names(session, organisation_id=DEV_ORG)
+        names = [r["item_name"] for r in unmapped]
         assert "Unmapped Special" in names
         assert "Mapped Ramen" not in names
 
@@ -236,6 +242,7 @@ class TestTheoreticalConsumption:
 
         await recipes_service.save_recipe(
             session,
+            organisation_id=DEV_ORG,
             menu_item_name="Shoyu Ramen",
             lines=[{"item_id": pork, "qty_per_unit": 100}],
             notes=None,
@@ -278,6 +285,7 @@ class TestTheoreticalConsumption:
         pork = await _item(session, "Boiled Pork")
         await recipes_service.save_recipe(
             session,
+            organisation_id=DEV_ORG,
             menu_item_name="Shoyu Ramen",
             lines=[{"item_id": pork, "qty_per_unit": 100}],
             notes=None,
@@ -307,6 +315,7 @@ class TestTheoreticalConsumption:
         corn = await _item(session, "Sweet Corn")
         await recipes_service.save_recipe(
             session,
+            organisation_id=DEV_ORG,
             menu_item_name="Shoyu Ramen",
             lines=[{"item_id": pork, "qty_per_unit": 100}],
             notes=None,
@@ -338,6 +347,7 @@ class TestTheoreticalConsumption:
         pork = await _item(session, "Boiled Pork")
         await recipes_service.save_recipe(
             session,
+            organisation_id=DEV_ORG,
             menu_item_name="Shoyu Ramen",
             lines=[{"item_id": pork, "qty_per_unit": 100}],
             notes=None,

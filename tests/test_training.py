@@ -22,6 +22,8 @@ from app.domains.training.service import Trainee, can_reset, can_skip, track_for
 V1 = "floor.v1"
 V2 = "floor.v2"
 MV1 = "management.v1"
+#: The development organisation (0026): where the seeded outlets live.
+DEV_ORG = uuid.UUID("a1000000-0000-4000-8000-000000000002")
 
 
 # --- Pure rules ----------------------------------------------------------------
@@ -136,8 +138,9 @@ async def _person(
     )
     await db.execute(
         text(
-            "insert into profiles (id, full_name, global_role, is_active, can_restart_training)"
-            " values (:id, :n, :r, true, :d)"
+            "insert into profiles (id, full_name, global_role, is_active, can_restart_training,"
+            " organisation_id) values (:id, :n, :r, true, :d,"
+            " (select organisation_id from outlets where code = 'AKR-NT01'))"
         ),
         {"id": pid, "n": name, "r": role.value, "d": delegated},
     )
@@ -165,6 +168,14 @@ async def _person(
             )
         )
     await db.commit()
+    org_outlets = (
+        await db.execute(
+            text(
+                "select id from outlets where deleted_at is null and is_active and"
+                " organisation_id = (select organisation_id from outlets where code = 'AKR-NT01')"
+            )
+        )
+    ).scalars()
     return CurrentUser(
         profile_id=pid,
         full_name=name,
@@ -172,6 +183,8 @@ async def _person(
         global_role=role,
         is_active=True,
         memberships=memberships,
+        organisation_id=DEV_ORG,
+        organisation_outlet_ids=frozenset(org_outlets),
     )
 
 

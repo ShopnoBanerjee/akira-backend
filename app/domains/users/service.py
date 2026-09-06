@@ -13,11 +13,23 @@ from app.domains.users import repository
 from app.domains.users.schemas import (
     DeviceSummary,
     MeResponse,
+    OrganisationSummary,
     OutletSummary,
     UpdateMeRequest,
 )
 
 MANAGEMENT_ROLES = {UserRole.OWNER, UserRole.OPS_MANAGER, UserRole.OUTLET_MANAGER}
+
+
+def _organisation_of(user: CurrentUser) -> OrganisationSummary | None:
+    if user.organisation_id is None or user.organisation_slug is None:
+        return None
+    return OrganisationSummary(
+        organisation_id=user.organisation_id,
+        slug=user.organisation_slug,
+        name=user.organisation_name or user.organisation_slug,
+        onboarded=user.organisation_onboarded,
+    )
 
 
 def _to_me(user: CurrentUser, profile: dict[str, Any]) -> MeResponse:
@@ -31,6 +43,10 @@ def _to_me(user: CurrentUser, profile: dict[str, Any]) -> MeResponse:
         is_active=profile["is_active"],
         is_management=UserRole(profile["global_role"]) in MANAGEMENT_ROLES,
         is_global=user.is_global,
+        is_platform_admin=user.is_platform_admin,
+        organisation=_organisation_of(user),
+        mfa_required=user.mfa_required,
+        mfa_verified=user.assurance_level == "aal2",
         has_pin=profile["has_pin"],
         can_restart_training=bool(profile.get("can_restart_training")),
         outlets=[
@@ -69,6 +85,7 @@ async def get_me(db: AsyncSession, user: CurrentUser) -> MeResponse:
             is_active=True,
             is_management=False,
             is_global=False,
+            organisation=_organisation_of(user),
             has_pin=False,
             can_restart_training=False,
             outlets=[],

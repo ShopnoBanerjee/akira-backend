@@ -482,6 +482,7 @@ _PEOPLE = text(
             where om.profile_id = p.id and om.deleted_at is null
       ) mo on true
      where p.deleted_at is null
+       and (cast(:org as uuid) is null or p.organisation_id = cast(:org as uuid))
        and (:all_outlets or exists (
               select 1 from outlet_members om
                where om.profile_id = p.id and om.deleted_at is null
@@ -506,9 +507,10 @@ async def people(db: AsyncSession, user: CurrentUser) -> list[PersonTraining]:
         await db.execute(
             _PEOPLE,
             {
-                "all_outlets": user.is_global,
+                "all_outlets": user.is_global or user.is_platform_admin,
                 "outlet_ids": list(user.outlet_ids),
                 "caller": user.profile_id,
+                "org": user.organisation_id,
             },
         )
     ).mappings()

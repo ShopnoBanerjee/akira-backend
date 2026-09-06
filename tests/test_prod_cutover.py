@@ -28,7 +28,8 @@ async def _person(conn: asyncpg.Connection, email: str, role: str, *, active: bo
     pid = uuid.uuid4()
     await conn.execute("insert into auth.users (id, email) values ($1, $2)", pid, email)
     await conn.execute(
-        "insert into profiles (id, full_name, global_role, is_active) values ($1, $2, $3, $4)",
+        "insert into profiles (id, full_name, global_role, is_active, organisation_id)"
+        " values ($1, $2, $3, $4, (select organisation_id from outlets where code = 'AKR-NT01'))",
         pid,
         email.split("@")[0],
         role,

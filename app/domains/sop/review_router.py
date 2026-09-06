@@ -130,7 +130,7 @@ async def list_runs(
             raise ForbiddenError("You do not have access to that outlet.")
         clauses.append("r.outlet_id = :outlet_id")
         params["outlet_id"] = outlet_id
-    elif not user.is_global:
+    elif not user.is_platform_admin:
         if not user.outlet_ids:
             return []
         clauses.append("r.outlet_id = any(:ids)")
@@ -491,7 +491,7 @@ async def list_exceptions(
             raise ForbiddenError("You do not have access to that outlet.")
         clauses.append("e.outlet_id = :outlet_id")
         params["outlet_id"] = outlet_id
-    elif not user.is_global:
+    elif not user.is_platform_admin:
         if not user.outlet_ids:
             return []
         clauses.append("e.outlet_id = any(:ids)")

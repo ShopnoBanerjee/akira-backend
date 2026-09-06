@@ -238,7 +238,11 @@ def _page_images(data: bytes, content_type: str) -> list[bytes]:
     return prepared
 
 
-async def _load_mapper(db: AsyncSession) -> tuple[Mapper, dict[str, InventoryUnit], list[str]]:
+async def _load_mapper(
+    db: AsyncSession, outlet_id: uuid.UUID
+) -> tuple[Mapper, dict[str, InventoryUnit], list[str]]:
+    """The outlet's organisation's catalogue and aliases, plus the starter
+    kit's (D33)."""
     rows = (
         (
             await db.execute(
@@ -247,8 +251,11 @@ async def _load_mapper(db: AsyncSession) -> tuple[Mapper, dict[str, InventoryUni
                     select i.id, i.name, i.name_bn, i.unit
                       from inventory_items i
                      where i.deleted_at is null and i.is_active
+                       and (i.organisation_id is null or i.organisation_id =
+                            (select organisation_id from outlets where id = :o))
                     """
-                )
+                ),
+                {"o": outlet_id},
             )
         )
         .mappings()
@@ -262,7 +269,14 @@ async def _load_mapper(db: AsyncSession) -> tuple[Mapper, dict[str, InventoryUni
     aliases = {
         r["alias"]: str(r["item_id"])
         for r in (
-            await db.execute(text("select alias, item_id from inventory_item_aliases"))
+            await db.execute(
+                text(
+                    "select alias, item_id from inventory_item_aliases a"
+                    " where a.organisation_id is null or a.organisation_id ="
+                    "       (select organisation_id from outlets where id = :o)"
+                ),
+                {"o": outlet_id},
+            )
         ).mappings()
     }
     vocabulary = sorted(r["name"] for r in rows)
@@ -295,7 +309,7 @@ async def extract_count(db: AsyncSession, count_id: uuid.UUID) -> dict[str, Any]
     data = await storage.download_object(count["storage_path"], bucket=STOCK_SHEET_BUCKET)
     content_type = "application/pdf" if count["storage_path"].endswith(".pdf") else "image/jpeg"
     pages = _page_images(data, content_type)
-    mapper, units, vocabulary = await _load_mapper(db)
+    mapper, units, vocabulary = await _load_mapper(db, count["outlet_id"])
 
     from app.core.config import get_settings
 
@@ -550,12 +564,19 @@ async def review_line(
             await db.execute(
                 text(
                     """
-                    insert into inventory_item_aliases (item_id, alias, created_by)
-                    values (:item, :alias, :by)
-                    on conflict ((lower(alias))) do nothing
+                    insert into inventory_item_aliases
+                        (organisation_id, item_id, alias, created_by)
+                    values (:org, :item, :alias, :by)
+                    on conflict (coalesce(organisation_id, '00000000-0000-0000-0000-000000000000'),
+                                 lower(alias)) do nothing
                     """
                 ),
-                {"item": item_id, "alias": alias, "by": user.profile_id},
+                {
+                    "item": item_id,
+                    "alias": alias,
+                    "by": user.profile_id,
+                    "org": user.organisation_id,
+                },
             )
     await db.commit()
     return {"line_id": str(line_id), "reviewed": True}

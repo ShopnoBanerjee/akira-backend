@@ -105,7 +105,8 @@ class SetLevelRequest(BaseModel):
     dependencies=[Depends(require_management)],
     summary="Departments (count stations)",
 )
-async def list_departments(db: DbDep) -> list[Department]:
+async def list_departments(db: DbDep, user: CurrentUserDep) -> list[Department]:
+    """The organisation's departments, plus the starter kit's (D33)."""
     rows = (
         await db.execute(
             text(
@@ -115,10 +116,12 @@ async def list_departments(db: DbDep) -> list[Department]:
                   from inventory_departments d
                   left join inventory_items i on i.department_id = d.id
                  where d.deleted_at is null
+                   and (d.organisation_id is null or d.organisation_id = cast(:org as uuid))
                  group by d.id
                  order by d.sort_order
                 """
-            )
+            ),
+            {"org": user.organisation_id},
         )
     ).mappings()
     return [Department(**r) for r in rows]
@@ -130,13 +133,16 @@ async def list_departments(db: DbDep) -> list[Department]:
     dependencies=[Depends(require_management)],
     summary="Item categories",
 )
-async def list_categories(db: DbDep) -> list[Category]:
+async def list_categories(db: DbDep, user: CurrentUserDep) -> list[Category]:
     rows = (
         await db.execute(
             text(
                 "select id, key, label, label_bn, sort_order from inventory_categories"
-                " where deleted_at is null order by sort_order"
-            )
+                " where deleted_at is null"
+                "   and (organisation_id is null or organisation_id = cast(:org as uuid))"
+                " order by sort_order"
+            ),
+            {"org": user.organisation_id},
         )
     ).mappings()
     return [Category(**r) for r in rows]
@@ -151,6 +157,10 @@ _ITEM_FROM = """
     join inventory_departments d on d.id = i.department_id
     left join inventory_categories c on c.id = i.category_id
 """
+#: An organisation reads its own catalogue rows and the starter kit's (D33)...
+_ORG_READ = "(i.organisation_id is null or i.organisation_id = cast(:org as uuid))"
+#: ...and edits only its own.
+_ORG_WRITE = "i.organisation_id = cast(:org as uuid)"
 
 
 async def _levels_for(
@@ -210,8 +220,8 @@ async def list_items(
     """The shared catalogue. Levels are included for the outlets the caller can
     see, so an outlet manager reads their own pars without seeing another
     outlet's."""
-    clauses = ["i.deleted_at is null"]
-    params: dict[str, Any] = {}
+    clauses = ["i.deleted_at is null", _ORG_READ]
+    params: dict[str, Any] = {"org": user.organisation_id}
     if not include_inactive:
         clauses.append("i.is_active")
     if department_id is not None:
@@ -229,7 +239,7 @@ async def list_items(
     )
     rows = [dict(r) for r in (await db.execute(text(sql), params)).mappings()]
 
-    visible = None if user.is_global else sorted(user.outlet_ids)
+    visible = None if user.is_platform_admin else sorted(user.outlet_ids)
     levels = await _levels_for(db, [r["id"] for r in rows], visible)
     return [Item(**r, levels=levels.get(r["id"], [])) for r in rows]
 
@@ -251,8 +261,11 @@ async def create_item(
     each outlet sets its own par level."""
     department = (
         await db.execute(
-            text("select id from inventory_departments where id = :id and deleted_at is null"),
-            {"id": payload.department_id},
+            text(
+                "select id from inventory_departments where id = :id and deleted_at is null"
+                "   and (organisation_id is null or organisation_id = cast(:org as uuid))"
+            ),
+            {"id": payload.department_id, "org": user.organisation_id},
         )
     ).first()
     if department is None:
@@ -261,11 +274,11 @@ async def create_item(
     duplicate = (
         await db.execute(
             text(
-                "select 1 from inventory_items"
-                " where department_id = :dept and lower(name) = lower(:name)"
-                "   and deleted_at is null"
+                "select 1 from inventory_items i"
+                " where i.department_id = :dept and lower(i.name) = lower(:name)"
+                f"   and i.deleted_at is null and {_ORG_READ}"
             ),
-            {"dept": payload.department_id, "name": payload.name},
+            {"dept": payload.department_id, "name": payload.name, "org": user.organisation_id},
         )
     ).first()
     if duplicate:
@@ -279,13 +292,19 @@ async def create_item(
             text(
                 """
                 insert into inventory_items
-                    (name, name_bn, department_id, category_id, unit, notes, created_by)
-                values (:name, :name_bn, :department_id, :category_id,
+                    (organisation_id, name, name_bn, department_id, category_id, unit, notes,
+                     created_by)
+                values (:org, :name, :name_bn, :department_id, :category_id,
                         cast(:unit as inventory_unit), :notes, :created_by)
                 returning id
                 """
             ),
-            {**payload.model_dump(), "unit": payload.unit.value, "created_by": user.profile_id},
+            {
+                **payload.model_dump(),
+                "unit": payload.unit.value,
+                "created_by": user.profile_id,
+                "org": user.organisation_id,
+            },
         )
     ).scalar_one()
 
@@ -320,10 +339,10 @@ async def update_item(
         (
             await db.execute(
                 text(
-                    "select name, name_bn, unit, notes, is_active from inventory_items"
-                    " where id = :id and deleted_at is null"
+                    "select name, name_bn, unit, notes, is_active from inventory_items i"
+                    f" where i.id = :id and i.deleted_at is null and {_ORG_WRITE}"
                 ),
-                {"id": item_id},
+                {"id": item_id, "org": user.organisation_id},
             )
         )
         .mappings()
@@ -380,8 +399,11 @@ async def delete_item(
     before = (
         (
             await db.execute(
-                text("select name from inventory_items where id = :id and deleted_at is null"),
-                {"id": item_id},
+                text(
+                    "select name from inventory_items i"
+                    f" where i.id = :id and i.deleted_at is null and {_ORG_WRITE}"
+                ),
+                {"id": item_id, "org": user.organisation_id},
             )
         )
         .mappings()
@@ -431,8 +453,11 @@ async def set_level(
         )
     item = (
         await db.execute(
-            text("select 1 from inventory_items where id = :id and deleted_at is null"),
-            {"id": item_id},
+            text(
+                "select 1 from inventory_items i"
+                f" where i.id = :id and i.deleted_at is null and {_ORG_READ}"
+            ),
+            {"id": item_id, "org": user.organisation_id},
         )
     ).first()
     if item is None:
@@ -490,7 +515,7 @@ async def _get_item(db: AsyncSession, user: CurrentUserDep, item_id: uuid.UUID) 
     )
     if row is None:
         raise NotFoundError("That item does not exist.")
-    visible = None if user.is_global else sorted(user.outlet_ids)
+    visible = None if user.is_platform_admin else sorted(user.outlet_ids)
     levels = await _levels_for(db, [item_id], visible)
     return Item(**row, levels=levels.get(item_id, []))
 
@@ -542,10 +567,10 @@ class UnmappedName(BaseModel):
     dependencies=[Depends(require_management)],
     summary="Every recipe, with its ingredient lines",
 )
-async def list_recipes(db: DbDep) -> list[Recipe]:
+async def list_recipes(db: DbDep, user: CurrentUserDep) -> list[Recipe]:
     from app.domains.inventory import recipes_service
 
-    rows = await recipes_service.list_recipes(db)
+    rows = await recipes_service.list_recipes(db, organisation_id=user.organisation_id)
     return [Recipe(**r) for r in rows]
 
 
@@ -555,13 +580,13 @@ async def list_recipes(db: DbDep) -> list[Recipe]:
     dependencies=[Depends(require_management)],
     summary="Sold menu items with no recipe yet",
 )
-async def unmapped(db: DbDep) -> list[UnmappedName]:
+async def unmapped(db: DbDep, user: CurrentUserDep) -> list[UnmappedName]:
     """The worklist, ordered by units sold — map the ramen that sells thirty
     a night before the seasonal special. Theoretical consumption only counts
     what is mapped, so this list is the honesty gap made visible."""
     from app.domains.inventory import recipes_service
 
-    rows = await recipes_service.unmapped_names(db)
+    rows = await recipes_service.unmapped_names(db, organisation_id=user.organisation_id)
     return [UnmappedName(**r) for r in rows]
 
 
@@ -582,8 +607,11 @@ async def save_recipe(
     where those exact strings come from."""
     from app.domains.inventory import recipes_service
 
+    if user.organisation_id is None:
+        raise ForbiddenError("Recipes belong to an organisation; this login has none.")
     result = await recipes_service.save_recipe(
         db,
+        organisation_id=user.organisation_id,
         menu_item_name=menu_item_name.strip(),
         lines=[line.model_dump() for line in payload.lines],
         notes=payload.notes,
@@ -623,7 +651,7 @@ async def delete_recipe(
 ) -> dict[str, Any]:
     from app.domains.inventory import recipes_service
 
-    name = await recipes_service.delete_recipe(db, recipe_id)
+    name = await recipes_service.delete_recipe(db, recipe_id, organisation_id=user.organisation_id)
     await record(
         db,
         actor_profile_id=user.profile_id,

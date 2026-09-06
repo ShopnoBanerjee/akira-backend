@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.enums import SalesChannel
 from app.domains.sales import petpooja, service
+from tests.conftest import DEV_ORG, dev_outlet_ids
 
 pytestmark = pytest.mark.asyncio
 
@@ -266,6 +267,8 @@ class TestDailyTotals:
             email=None,
             global_role=UserRole.OWNER,
             is_active=True,
+            organisation_id=DEV_ORG,
+            organisation_outlet_ids=dev_outlet_ids(),
         )
         totals = await service.daily_totals(
             session, owner, outlet_id=outlet, date_from=None, date_to=None
@@ -289,6 +292,8 @@ class TestUploadValidation:
             email=None,
             global_role=UserRole.OWNER,
             is_active=True,
+            organisation_id=DEV_ORG,
+            organisation_outlet_ids=dev_outlet_ids(),
         )
         with pytest.raises(ValidationError, match=r"\.xlsx"):
             await service.create_upload(
@@ -312,6 +317,8 @@ class TestUploadValidation:
             email=None,
             global_role=UserRole.OWNER,
             is_active=True,
+            organisation_id=DEV_ORG,
+            organisation_outlet_ids=dev_outlet_ids(),
         )
         with pytest.raises(ValidationError, match="empty"):
             await service.create_upload(
@@ -471,6 +478,8 @@ class TestWritingItems:
             email=None,
             global_role=UserRole.OWNER,
             is_active=True,
+            organisation_id=DEV_ORG,
+            organisation_outlet_ids=dev_outlet_ids(),
         )
         rows = await service.list_orders(
             session, owner, outlet_id=outlet, date_from=None, date_to=None, limit=10
@@ -508,6 +517,8 @@ class TestWritingItems:
             email=None,
             global_role=UserRole.OWNER,
             is_active=True,
+            organisation_id=DEV_ORG,
+            organisation_outlet_ids=dev_outlet_ids(),
         )
         rows = await service.item_summary(
             session, owner, outlet_id=outlet, date_from=None, date_to=None

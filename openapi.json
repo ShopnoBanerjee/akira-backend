@@ -602,6 +602,36 @@
         }
       }
     },
+    "/platform/organisations": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Every organisation on the platform",
+        "operationId": "list_organisations_platform_organisations_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrganisationRow"
+                  },
+                  "type": "array",
+                  "title": "Response List Organisations Platform Organisations Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/outlets": {
       "get": {
         "tags": [
@@ -1055,6 +1085,7 @@
           "inventory"
         ],
         "summary": "Departments (count stations)",
+        "description": "The organisation's departments, plus the starter kit's (D33).",
         "operationId": "list_departments_inventory_departments_get",
         "responses": {
           "200": {
@@ -2128,7 +2159,7 @@
           "settings"
         ],
         "summary": "Every setting with its current value",
-        "description": "The full registry, each key resolved to the value in force right now at\nglobal scope. Grouped client-side by `group`.",
+        "description": "The full registry, each key resolved to the value in force right now for\nthe caller's organisation (D33); the platform's job times stay global.\nGrouped client-side by `group`.",
         "operationId": "list_settings_settings_get",
         "responses": {
           "200": {
@@ -2159,6 +2190,7 @@
           "settings"
         ],
         "summary": "Every value this setting has held",
+        "description": "The organisation's rows for this key: its own, its outlets', and the\nglobal ones that still apply to it.",
         "operationId": "setting_history_settings__key__history_get",
         "security": [
           {
@@ -3040,7 +3072,7 @@
           "sales"
         ],
         "summary": "The menu map, with the bill spellings that point at each item",
-        "description": "Brand-level: one menu across outlets (D29). Empty until an Item Wise\nreport has been uploaded.",
+        "description": "Organisation-level: one menu across its outlets (D29, D33). Empty until\nan Item Wise report has been uploaded.",
         "operationId": "menu_items_sales_menu_items_get",
         "responses": {
           "200": {
@@ -5443,6 +5475,7 @@
           "sop"
         ],
         "summary": "SOP categories",
+        "description": "The organisation's categories plus the starter kit's (D33).",
         "operationId": "list_categories_sop_categories_get",
         "responses": {
           "200": {
@@ -8097,6 +8130,31 @@
             "type": "boolean",
             "title": "Is Global"
           },
+          "is_platform_admin": {
+            "type": "boolean",
+            "title": "Is Platform Admin",
+            "default": false
+          },
+          "organisation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrganisationSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mfa_required": {
+            "type": "boolean",
+            "title": "Mfa Required",
+            "default": false
+          },
+          "mfa_verified": {
+            "type": "boolean",
+            "title": "Mfa Verified",
+            "default": false
+          },
           "has_pin": {
             "type": "boolean",
             "title": "Has Pin"
@@ -8556,6 +8614,109 @@
           "items"
         ],
         "title": "OrderRow"
+      },
+      "OrganisationRow": {
+        "properties": {
+          "organisation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Organisation Id"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "onboarded_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Onboarded At"
+          },
+          "max_outlets": {
+            "type": "integer",
+            "title": "Max Outlets"
+          },
+          "max_people": {
+            "type": "integer",
+            "title": "Max People"
+          },
+          "outlets": {
+            "type": "integer",
+            "title": "Outlets"
+          },
+          "people": {
+            "type": "integer",
+            "title": "People"
+          },
+          "owners": {
+            "type": "integer",
+            "title": "Owners"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "organisation_id",
+          "slug",
+          "name",
+          "is_active",
+          "onboarded_at",
+          "max_outlets",
+          "max_people",
+          "outlets",
+          "people",
+          "owners",
+          "created_at"
+        ],
+        "title": "OrganisationRow"
+      },
+      "OrganisationSummary": {
+        "properties": {
+          "organisation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Organisation Id"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "onboarded": {
+            "type": "boolean",
+            "title": "Onboarded"
+          }
+        },
+        "type": "object",
+        "required": [
+          "organisation_id",
+          "slug",
+          "name",
+          "onboarded"
+        ],
+        "title": "OrganisationSummary",
+        "description": "The tenant the caller belongs to (D33)."
       },
       "OutletHealthRow": {
         "properties": {
@@ -11590,7 +11751,8 @@
           "ops_manager",
           "outlet_manager",
           "shift_lead",
-          "staff"
+          "staff",
+          "platform_admin"
         ],
         "title": "UserRole"
       },

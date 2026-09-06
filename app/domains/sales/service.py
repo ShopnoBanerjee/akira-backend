@@ -919,13 +919,28 @@ async def _parse_categories(db: AsyncSession, upload: Any, data: bytes) -> dict[
     }
 
 
+async def organisation_of_outlet(db: AsyncSession, outlet_id: uuid.UUID) -> uuid.UUID:
+    """The tenant an outlet belongs to; the menu map and recipes are keyed by
+    it (D33)."""
+    org = await db.scalar(
+        text("select organisation_id from outlets where id = :o"), {"o": outlet_id}
+    )
+    if org is None:
+        raise NotFoundError("That outlet does not exist.")
+    return uuid.UUID(str(org))
+
+
+#: The organisation's own menu rows plus the starter kit's (D33).
+_MENU_READ = "(m.organisation_id is null or m.organisation_id = cast(:org as uuid))"
+
 _UPSERT_MENU_ITEMS = text(
     """
-    insert into menu_items (name, category, petpooja_code, upload_id)
-    select n, c, k, :upload_id
+    insert into menu_items (organisation_id, name, category, petpooja_code, upload_id)
+    select cast(:org as uuid), n, c, k, :upload_id
       from unnest(cast(:names as text[]), cast(:categories as text[]),
                   cast(:codes as text[])) as u(n, c, k)
-    on conflict (name) do update set
+    on conflict (coalesce(organisation_id, '00000000-0000-0000-0000-000000000000'),
+                 lower(name)) do update set
         category      = excluded.category,
         petpooja_code = coalesce(excluded.petpooja_code, menu_items.petpooja_code),
         upload_id     = excluded.upload_id,
@@ -944,11 +959,13 @@ async def _parse_itemwise(db: AsyncSession, upload: Any, data: bytes) -> dict[st
     """
     result = petpooja_itemwise.parse_itemwise(data)
     await check_restaurant(db, outlet_id=upload["outlet_id"], found=result.restaurant)
+    organisation_id = await organisation_of_outlet(db, upload["outlet_id"])
     flags = (
         (
             await db.execute(
                 _UPSERT_MENU_ITEMS,
                 {
+                    "org": organisation_id,
                     "upload_id": upload["id"],
                     "names": [i.item_name for i in result.items],
                     "categories": [i.category for i in result.items],
@@ -1026,6 +1043,7 @@ async def menu_mix(
     map does not know are listed, because an unmapped item silently lowers
     every rate.
     """
+    organisation_id = await organisation_of_outlet(db, outlet_id)
     if not user.can_access_outlet(outlet_id):
         raise ForbiddenError("You do not have access to that outlet.")
 
@@ -1150,20 +1168,23 @@ async def menu_mix(
         for r in (
             await db.execute(
                 text(
-                    """
+                    f"""
                     select distinct i.item_name
                       from sales_order_items i
                       join sales_orders o on o.id = i.order_id
                      where o.outlet_id = :o
-                       and not exists (select 1 from menu_items m where m.name = i.item_name)
                        and not exists (
-                           select 1 from menu_item_aliases a
-                            where lower(a.alias) = lower(i.item_name)
+                           select 1 from menu_items m
+                            where m.name = i.item_name and {_MENU_READ}
+                       )
+                       and not exists (
+                           select 1 from menu_item_aliases m
+                            where lower(m.alias) = lower(i.item_name) and {_MENU_READ}
                        )
                      order by 1
                     """
                 ),
-                {"o": outlet_id},
+                {"o": outlet_id, "org": organisation_id},
             )
         ).mappings()
     ]
@@ -1183,7 +1204,13 @@ async def menu_mix(
         ],
         "unmapped_item_names": unmapped,
     }
-    menu_known = int(await db.scalar(text("select count(*) from menu_items")) or 0)
+    menu_known = int(
+        await db.scalar(
+            text(f"select count(*) from menu_items m where {_MENU_READ}"),
+            {"org": organisation_id},
+        )
+        or 0
+    )
     return {
         "outlet_id": str(outlet_id),
         "menu_items_known": menu_known,
@@ -1192,13 +1219,15 @@ async def menu_mix(
     }
 
 
-async def list_menu_items(db: AsyncSession) -> list[dict[str, Any]]:
+async def list_menu_items(
+    db: AsyncSession, *, organisation_id: uuid.UUID | None
+) -> list[dict[str, Any]]:
     """The menu map with its aliases, for the alias editor and the unmapped
-    list's dropdown. Brand-level, so no outlet filter."""
+    list's dropdown. Organisation-level, so no outlet filter."""
     rows = (
         await db.execute(
             text(
-                """
+                f"""
                 select m.id, m.name, m.category, m.petpooja_code,
                        coalesce(
                            json_agg(json_build_object('id', a.id, 'alias', a.alias)
@@ -1208,10 +1237,12 @@ async def list_menu_items(db: AsyncSession) -> list[dict[str, Any]]:
                        ) as aliases
                   from menu_items m
                   left join menu_item_aliases a on a.menu_item_id = m.id
+                 where {_MENU_READ}
                  group by m.id
                  order by m.category, m.name
                 """
-            )
+            ),
+            {"org": organisation_id},
         )
     ).mappings()
     out = []
@@ -1244,8 +1275,11 @@ async def add_menu_alias(
     item = (
         (
             await db.execute(
-                text("select id, name from menu_items where lower(name) = lower(:n)"),
-                {"n": menu_item_name},
+                text(
+                    "select m.id, m.name from menu_items m"
+                    f" where lower(m.name) = lower(:n) and {_MENU_READ}"
+                ),
+                {"n": menu_item_name, "org": user.organisation_id},
             )
         )
         .mappings()
@@ -1256,7 +1290,8 @@ async def add_menu_alias(
             f"{menu_item_name!r} is not a menu item. Upload an Item Wise report that names it."
         )
     if await db.scalar(
-        text("select 1 from menu_items where lower(name) = lower(:a)"), {"a": alias}
+        text(f"select 1 from menu_items m where lower(m.name) = lower(:a) and {_MENU_READ}"),
+        {"a": alias, "org": user.organisation_id},
     ):
         raise ConflictError(f"{alias!r} is already a menu item name; it needs no alias.")
     existing = (
@@ -1267,9 +1302,11 @@ async def add_menu_alias(
                     select a.alias, m.name
                       from menu_item_aliases a join menu_items m on m.id = a.menu_item_id
                      where lower(a.alias) = lower(:a)
+                       and (a.organisation_id is null
+                            or a.organisation_id = cast(:org as uuid))
                     """
                 ),
-                {"a": alias},
+                {"a": alias, "org": user.organisation_id},
             )
         )
         .mappings()
@@ -1284,11 +1321,11 @@ async def add_menu_alias(
     alias_id = await db.scalar(
         text(
             """
-            insert into menu_item_aliases (menu_item_id, alias, created_by)
-            values (:item_id, :alias, :by) returning id
+            insert into menu_item_aliases (organisation_id, menu_item_id, alias, created_by)
+            values (:org, :item_id, :alias, :by) returning id
             """
         ),
-        {"item_id": item["id"], "alias": alias, "by": user.profile_id},
+        {"item_id": item["id"], "alias": alias, "by": user.profile_id, "org": user.organisation_id},
     )
     await record(
         db,
@@ -1319,10 +1356,10 @@ async def delete_menu_alias(
                     """
                     select a.alias, m.name
                       from menu_item_aliases a join menu_items m on m.id = a.menu_item_id
-                     where a.id = :id
+                     where a.id = :id and a.organisation_id = cast(:org as uuid)
                     """
                 ),
-                {"id": alias_id},
+                {"id": alias_id, "org": user.organisation_id},
             )
         )
         .mappings()
@@ -1370,7 +1407,7 @@ async def list_uploads(
             raise ForbiddenError("You do not have access to that outlet.")
         clauses.append("u.outlet_id = :outlet_id")
         params["outlet_id"] = outlet_id
-    elif not user.is_global:
+    elif not user.is_platform_admin:
         if not user.outlet_ids:
             return []
         clauses.append("u.outlet_id = any(:ids)")
@@ -1431,7 +1468,7 @@ async def list_orders(
             raise ForbiddenError("You do not have access to that outlet.")
         clauses.append("s.outlet_id = :outlet_id")
         params["outlet_id"] = outlet_id
-    elif not user.is_global:
+    elif not user.is_platform_admin:
         if not user.outlet_ids:
             return []
         clauses.append("s.outlet_id = any(:ids)")

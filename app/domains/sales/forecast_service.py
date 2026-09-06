@@ -97,7 +97,9 @@ async def events_for(
                     select event_date, cast(multiplier as float8) as multiplier,
                            label, outlet_id, created_at
                       from forecast_events
-                     where (outlet_id = :o or outlet_id is null)
+                     where (outlet_id = :o
+                            or (outlet_id is null and organisation_id =
+                                (select organisation_id from outlets where id = :o)))
                        and event_date between :start and :end
                      order by event_date,
                               (outlet_id is null),  -- outlet-specific first
@@ -303,7 +305,9 @@ async def list_events(
                            p.full_name as created_by_name, e.created_at
                       from forecast_events e
                       left join profiles p on p.id = e.created_by
-                     where (e.outlet_id = :o or e.outlet_id is null)
+                     where (e.outlet_id = :o
+                            or (e.outlet_id is null and e.organisation_id =
+                                (select organisation_id from outlets where id = :o)))
                        and e.event_date between :start and :end
                      order by e.event_date, e.created_at
                     """
@@ -320,6 +324,7 @@ async def list_events(
 async def create_event(
     db: AsyncSession,
     *,
+    organisation_id: uuid.UUID,
     outlet_id: uuid.UUID | None,
     event_date: date,
     multiplier: float,
@@ -332,13 +337,14 @@ async def create_event(
                 text(
                     """
                     insert into forecast_events
-                        (outlet_id, event_date, multiplier, label, created_by)
-                    values (:o, :d, :m, :label, :by)
+                        (organisation_id, outlet_id, event_date, multiplier, label, created_by)
+                    values (:org, :o, :d, :m, :label, :by)
                     returning id, outlet_id, event_date,
                               cast(multiplier as float8) as multiplier, label, created_at
                     """
                 ),
                 {
+                    "org": organisation_id,
                     "o": outlet_id,
                     "d": event_date,
                     "m": multiplier,

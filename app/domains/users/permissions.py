@@ -33,6 +33,9 @@ class Actor:
 
 def can_grant_role(actor: Actor, target_role: UserRole) -> bool:
     """May this actor grant this role to somebody?"""
+    if target_role is UserRole.PLATFORM_ADMIN:
+        # Not through the API at all: scripts/create_platform_admin.py (D33).
+        return False
     if actor.role is UserRole.OWNER:
         # An owner may appoint another owner. That is a real decision, but it is
         # theirs to make; nobody else can.

@@ -102,8 +102,9 @@ async def world(migrated_db: str):  # type: ignore[no-untyped-def]
             "insert into auth.users (id, email) values ($1, $2)", pid, f"{pid}@rls.test"
         )
         await conn.execute(
-            "insert into profiles (id, full_name, global_role, is_active)"
-            " values ($1, $2, $3::user_role, $4)",
+            "insert into profiles (id, full_name, global_role, is_active, organisation_id)"
+            " values ($1, $2, $3::user_role, $4,"
+            " (select organisation_id from outlets where code = 'AKR-NT01'))",
             pid,
             name,
             role,

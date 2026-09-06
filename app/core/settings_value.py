@@ -38,7 +38,7 @@ __all__ = [
 
 _RESOLVE_SQL = text(
     "select setting_value(:key, cast(:outlet_id as uuid), "
-    "coalesce(cast(:at as timestamptz), now())) as value"
+    "coalesce(cast(:at as timestamptz), now()), cast(:organisation_id as uuid)) as value"
 )
 
 
@@ -74,12 +74,18 @@ async def resolve(
     *,
     outlet_id: uuid.UUID | None = None,
     at: datetime | None = None,
+    organisation_id: uuid.UUID | None = None,
 ) -> Any:
     """The value in force for ``key``, falling back to the registry default."""
     definition = REGISTRY.get(key)
     if definition is None:
         raise KeyError(f"{key} is not a declared setting. See app/core/settings_registry.py.")
-    raw = (await db.execute(_RESOLVE_SQL, {"key": key, "outlet_id": outlet_id, "at": at})).scalar()
+    raw = (
+        await db.execute(
+            _RESOLVE_SQL,
+            {"key": key, "outlet_id": outlet_id, "at": at, "organisation_id": organisation_id},
+        )
+    ).scalar()
     if raw is None:
         return definition.default
     value = decode_stored(raw, definition)
@@ -92,6 +98,7 @@ async def resolve_many(
     *,
     outlet_id: uuid.UUID | None = None,
     at: datetime | None = None,
+    organisation_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     """Several keys in one round trip. A job resolving eight thresholds one at
     a time is eight round trips it does not need."""
@@ -104,11 +111,12 @@ async def resolve_many(
                 """
                 select k as key,
                        setting_value(k, cast(:outlet_id as uuid),
-                                     coalesce(cast(:at as timestamptz), now())) as value
+                                     coalesce(cast(:at as timestamptz), now()),
+                                     cast(:organisation_id as uuid)) as value
                   from unnest(cast(:keys as text[])) as k
                 """
             ),
-            {"keys": keys, "outlet_id": outlet_id, "at": at},
+            {"keys": keys, "outlet_id": outlet_id, "at": at, "organisation_id": organisation_id},
         )
     ).mappings()
     resolved: dict[str, Any] = {}
@@ -174,8 +182,9 @@ async def resolve_int(
     *,
     outlet_id: uuid.UUID | None = None,
     at: datetime | None = None,
+    organisation_id: uuid.UUID | None = None,
 ) -> int:
-    return int(await resolve(db, key, outlet_id=outlet_id, at=at))
+    return int(await resolve(db, key, outlet_id=outlet_id, at=at, organisation_id=organisation_id))
 
 
 async def resolve_float(
@@ -184,8 +193,11 @@ async def resolve_float(
     *,
     outlet_id: uuid.UUID | None = None,
     at: datetime | None = None,
+    organisation_id: uuid.UUID | None = None,
 ) -> float:
-    return float(await resolve(db, key, outlet_id=outlet_id, at=at))
+    return float(
+        await resolve(db, key, outlet_id=outlet_id, at=at, organisation_id=organisation_id)
+    )
 
 
 async def resolve_bool(
@@ -194,8 +206,9 @@ async def resolve_bool(
     *,
     outlet_id: uuid.UUID | None = None,
     at: datetime | None = None,
+    organisation_id: uuid.UUID | None = None,
 ) -> bool:
-    return bool(await resolve(db, key, outlet_id=outlet_id, at=at))
+    return bool(await resolve(db, key, outlet_id=outlet_id, at=at, organisation_id=organisation_id))
 
 
 def parse_time(value: str) -> time:
@@ -210,5 +223,8 @@ async def resolve_time(
     *,
     outlet_id: uuid.UUID | None = None,
     at: datetime | None = None,
+    organisation_id: uuid.UUID | None = None,
 ) -> time:
-    return parse_time(str(await resolve(db, key, outlet_id=outlet_id, at=at)))
+    return parse_time(
+        str(await resolve(db, key, outlet_id=outlet_id, at=at, organisation_id=organisation_id))
+    )

@@ -17,14 +17,22 @@ _COLUMNS = """
 
 
 async def list_outlets(
-    db: AsyncSession, *, outlet_ids: list[uuid.UUID] | None, include_inactive: bool
+    db: AsyncSession,
+    *,
+    outlet_ids: list[uuid.UUID] | None,
+    include_inactive: bool,
+    organisation_id: uuid.UUID | None = None,
 ) -> list[dict[str, Any]]:
-    """outlet_ids None means "every outlet" — only for owner and ops_manager."""
+    """outlet_ids None means "every outlet" the organisation filter allows; both
+    None is the platform admin's view of everything."""
     clauses = ["o.deleted_at is null"]
     params: dict[str, Any] = {}
     if outlet_ids is not None:
         clauses.append("o.id = any(:ids)")
         params["ids"] = outlet_ids
+    if organisation_id is not None:
+        clauses.append("o.organisation_id = :org")
+        params["org"] = organisation_id
     if not include_inactive:
         clauses.append("o.is_active")
     sql = f"select {_COLUMNS} from outlets o where {' and '.join(clauses)} order by o.code"
@@ -45,10 +53,34 @@ async def get_outlet(db: AsyncSession, outlet_id: uuid.UUID) -> dict[str, Any] |
     return dict(row) if row else None
 
 
-async def code_exists(db: AsyncSession, code: str) -> bool:
+async def code_exists(db: AsyncSession, code: str, organisation_id: uuid.UUID) -> bool:
+    """Codes are unique per organisation (D33): two tenants may both have SP01."""
     return (
-        await db.execute(text("select 1 from outlets where code = :code"), {"code": code})
+        await db.execute(
+            text("select 1 from outlets where code = :code and organisation_id = :org"),
+            {"code": code, "org": organisation_id},
+        )
     ).first() is not None
+
+
+async def outlet_headroom(db: AsyncSession, organisation_id: uuid.UUID) -> tuple[int, int]:
+    """(outlets in use, cap) for the organisation."""
+    row = (
+        await db.execute(
+            text(
+                """
+                select (select count(*) from outlets o
+                         where o.organisation_id = g.id and o.deleted_at is null) as used,
+                       g.max_outlets
+                  from organisations g where g.id = :org
+                """
+            ),
+            {"org": organisation_id},
+        )
+    ).first()
+    if row is None:
+        return 0, 0
+    return int(row[0]), int(row[1])
 
 
 async def insert_outlet(db: AsyncSession, values: dict[str, Any]) -> uuid.UUID:
@@ -57,10 +89,10 @@ async def insert_outlet(db: AsyncSession, values: dict[str, Any]) -> uuid.UUID:
             text(
                 """
                 insert into outlets
-                    (code, name, address_line, city, geo_lat, geo_lng,
+                    (organisation_id, code, name, address_line, city, geo_lat, geo_lng,
                      geofence_radius_m, timezone, opened_on)
                 values
-                    (:code, :name, :address_line, :city, :geo_lat, :geo_lng,
+                    (:organisation_id, :code, :name, :address_line, :city, :geo_lat, :geo_lng,
                      :geofence_radius_m, :timezone, :opened_on)
                 returning id
                 """

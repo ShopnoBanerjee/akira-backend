@@ -88,19 +88,23 @@ def _definition(key: str) -> SettingDef:
     dependencies=[Depends(require_admin)],
     summary="Every setting with its current value",
 )
-async def list_settings(db: DbDep) -> list[SettingView]:
-    """The full registry, each key resolved to the value in force right now at
-    global scope. Grouped client-side by `group`."""
+async def list_settings(db: DbDep, user: CurrentUserDep) -> list[SettingView]:
+    """The full registry, each key resolved to the value in force right now for
+    the caller's organisation (D33); the platform's job times stay global.
+    Grouped client-side by `group`."""
     rows = (
         await db.execute(
             text(
                 """
                 select distinct on (key) key, value
                   from app_settings
-                 where scope = 'global' and effective_from <= now()
+                 where effective_from <= now()
+                   and ((scope = 'organisation' and organisation_id = cast(:org as uuid))
+                        or (scope = 'global' and key like 'jobs.%'))
                  order by key, effective_from desc
                 """
-            )
+            ),
+            {"org": user.organisation_id},
         )
     ).mappings()
     current: dict[str, Any] = {r["key"]: r["value"] for r in rows}
@@ -141,8 +145,11 @@ async def list_settings(db: DbDep) -> list[SettingView]:
 async def setting_history(
     key: str,
     db: DbDep,
+    user: CurrentUserDep,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[SettingHistoryRow]:
+    """The organisation's rows for this key: its own, its outlets', and the
+    global ones that still apply to it."""
     definition = _definition(key)
 
     rows = (
@@ -154,11 +161,15 @@ async def setting_history(
                   from app_settings s
                   left join profiles p on p.id = s.set_by
                  where s.key = :key
+                   and (s.scope = 'global'
+                        or s.organisation_id = cast(:org as uuid)
+                        or s.outlet_id in (select id from outlets
+                                            where organisation_id = cast(:org as uuid)))
                  order by s.effective_from desc
                  limit :limit
                 """
             ),
-            {"key": key, "limit": limit},
+            {"key": key, "limit": limit, "org": user.organisation_id},
         )
     ).mappings()
     return [
@@ -216,15 +227,27 @@ async def set_setting(
         raise ValidationError(
             f"{definition.label} is a network-wide setting and cannot be overridden per outlet."
         )
+    if payload.outlet_id is not None and not user.can_access_outlet(payload.outlet_id):
+        raise ForbiddenError("You do not have access to that outlet.")
 
     import json
 
-    scope = "outlet" if payload.outlet_id is not None else "global"
+    # An organisation's settings are its own (D33). The platform's job clock
+    # is the one thing still set globally; it runs the same for every tenant.
+    if payload.outlet_id is not None:
+        scope = "outlet"
+    elif key.startswith("jobs."):
+        scope = "global"
+    else:
+        if user.organisation_id is None:
+            raise ForbiddenError("Settings belong to an organisation; this login has none.")
+        scope = "organisation"
     await db.execute(
         text(
             """
-            insert into app_settings (key, scope, outlet_id, value, effective_from, note, set_by)
-            values (:key, cast(:scope as setting_scope), :outlet_id,
+            insert into app_settings
+                (key, scope, outlet_id, organisation_id, value, effective_from, note, set_by)
+            values (:key, cast(:scope as setting_scope), :outlet_id, :organisation_id,
                     cast(:value as jsonb),
                     coalesce(cast(:effective_from as timestamptz), now()),
                     :note, :set_by)
@@ -234,6 +257,7 @@ async def set_setting(
             "key": key,
             "scope": scope,
             "outlet_id": payload.outlet_id,
+            "organisation_id": user.organisation_id if scope == "organisation" else None,
             "value": json.dumps(payload.value),
             "effective_from": payload.effective_from,
             "note": payload.note,
@@ -258,5 +282,5 @@ async def set_setting(
     )
     await db.commit()
 
-    views = await list_settings(db)
+    views = await list_settings(db, user)
     return next(v for v in views if v.key == key)

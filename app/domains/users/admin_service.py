@@ -81,7 +81,7 @@ async def list_users(
                 extra={"outlet_id": str(outlet_id)},
             )
         scope: list[uuid.UUID] | None = [outlet_id]
-    elif user.is_global:
+    elif user.is_global or user.is_platform_admin:
         scope = None
     else:
         # Someone with no outlet sees nobody, rather than everybody.
@@ -93,6 +93,9 @@ async def list_users(
         role=role.value if role else None,
         is_active=is_active,
         search=search,
+        # Never past the organisation, whatever the role (D33). A platform
+        # admin has none and sees everyone.
+        organisation_id=user.organisation_id,
     )
     memberships = await repository.memberships_for(db, [r["profile_id"] for r in rows])
     return [_to_item(r, memberships.get(r["profile_id"], [])) for r in rows]
@@ -136,6 +139,18 @@ async def invite(
             "You can only invite people into your own outlets.",
             extra={"your_outlets": [str(o) for o in sorted(user.outlet_ids)]},
         )
+    # An owner reaches every outlet OF THEIR ORGANISATION. Not another's.
+    if user.organisation_id is None or not requested.issubset(user.organisation_outlet_ids):
+        raise ForbiddenError(
+            "You can only invite people into your own organisation's outlets.",
+            extra={"your_outlets": [str(o) for o in sorted(user.outlet_ids)]},
+        )
+    used, cap = await repository.people_headroom(db, user.organisation_id)
+    if used >= cap:
+        raise ForbiddenError(
+            f"This organisation is at its limit of {cap} people.",
+            extra={"max_people": cap, "people": used},
+        )
 
     settings = get_settings()
     auth = SupabaseAuthAdmin(settings.SUPABASE_URL, settings.SUPABASE_SECRET_KEY)
@@ -155,6 +170,14 @@ async def invite(
         invite_sent = True
         detail = f"An invitation has been emailed to {payload.email}."
 
+    if existing:
+        # A login that already belongs to another organisation stays there.
+        theirs = await repository.get_user(db, auth_user_id)
+        if theirs is not None and theirs["organisation_id"] not in (None, user.organisation_id):
+            raise ConflictError(
+                f"{payload.email} already has a login with another organisation.",
+                extra={"field": "email"},
+            )
     await repository.upsert_profile(
         db,
         auth_user_id,
@@ -162,6 +185,7 @@ async def invite(
         global_role=payload.global_role.value,
         employee_code=payload.employee_code,
         phone=payload.phone,
+        organisation_id=user.organisation_id,
     )
     await repository.replace_memberships(
         db, auth_user_id, list(payload.outlet_ids), payload.global_role.value
@@ -201,6 +225,9 @@ async def _load_target(
 ) -> tuple[dict[str, Any], set[uuid.UUID]]:
     target = await repository.get_user(db, profile_id)
     if target is None:
+        raise NotFoundError("That person does not exist.")
+    if not user.is_platform_admin and target["organisation_id"] != user.organisation_id:
+        # Another organisation's person is not "forbidden"; they do not exist here.
         raise NotFoundError("That person does not exist.")
     outlets = await repository.outlet_ids_for(db, profile_id)
     if not permissions.can_administer(_actor(user), UserRole(target["global_role"]), outlets):
@@ -350,6 +377,9 @@ async def set_pin(
     target = await repository.get_user(db, profile_id)
     if target is None:
         raise NotFoundError("That person does not exist.")
+    if not user.is_platform_admin and target["organisation_id"] != user.organisation_id:
+        # Another organisation's person is not "forbidden"; they do not exist here.
+        raise NotFoundError("That person does not exist.")
     outlets = await repository.outlet_ids_for(db, profile_id)
 
     if not permissions.can_manage_pins(_actor(user), outlets):
@@ -395,6 +425,9 @@ async def set_training_delegate(
     give and take; the router already requires owner."""
     target = await repository.get_user(db, profile_id)
     if target is None:
+        raise NotFoundError("That person does not exist.")
+    if not user.is_platform_admin and target["organisation_id"] != user.organisation_id:
+        # Another organisation's person is not "forbidden"; they do not exist here.
         raise NotFoundError("That person does not exist.")
     role = UserRole(target["global_role"])
     if role not in {UserRole.OPS_MANAGER, UserRole.OUTLET_MANAGER}:

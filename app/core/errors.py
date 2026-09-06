@@ -73,6 +73,18 @@ class PendingActivationError(AppError):
     type_uri = "https://akira.ops/errors/pending-activation"
 
 
+class MfaRequiredError(AppError):
+    """Signed in, but this login must present a second factor first (D33).
+
+    Its own type so the client routes to the enrol/verify screen instead of
+    showing a refusal. Nothing else is wrong with the account.
+    """
+
+    status_code = 403
+    title = "Second Factor Required"
+    type_uri = "https://akira.ops/errors/mfa-required"
+
+
 class ForbiddenError(AppError):
     """Authenticated, identified, and not allowed to do this.
 

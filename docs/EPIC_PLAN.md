@@ -6,7 +6,7 @@ E0–E9 assumed a monorepo and a smaller admin surface; both changed. See
 
 ## Status
 
-**Everything P0–P25 is done, live on Supabase (Mumbai), pushed, and CI is green.**
+**Everything P0–P26a is done, live on Supabase (Mumbai), pushed, and CI is green.**
 P25 is the deploy pipeline; switching it on (accounts, secrets,
 `DEPLOY_ENABLED`) is the owner's step (`docs/RUNBOOK_DEPLOY.md` §2).
 Verify with `git log --oneline | head` rather than trusting this table — it
@@ -48,12 +48,14 @@ sat claiming "P2 next" until P17 had already shipped.
 | **P23** | Production readiness: startup guard, rate limit, headers, Docker/Fly, backup and cut-over scripts | D30 |
 | **P24** | Training walkthrough: role tracks, EN/BN, tracked per person, owner-restartable, delegable; mobile nav for /app | D31 |
 | **P25** | CI/CD: approval-gated deploy jobs (Fly `bom`, Cloudflare Pages), tracked migrations, post-deploy smoke | D32 |
+| **P26a** | Multi-tenancy core: `organisations`, organisation-scoped services and RLS, `platform_admin` (read-only inside tenants, audited), TOTP second factor for owners and the platform, no self-signup, `/platform/organisations` | D33 |
 
 ### Next
 
-Not yet chosen. `docs/OPEN_ITEMS.md` lists what is blocked and on whom —
-several Stage 2 threads are waiting on an export or a walk of the outlet
-rather than on code. Pick the next epic against that list.
+**P26b** (platform screens, create organisation + owner, onboarding wizard)
+then **P26c** (starter kit) — `docs/PLAN_MULTI_TENANT.md` §6–8 and §10.
+`docs/OPEN_ITEMS.md` still lists what is blocked on an export or a walk of
+the outlet rather than on code.
 
 ## Why users are seeded through the Auth API, not SQL
 

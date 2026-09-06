@@ -1512,3 +1512,82 @@ API after the migrations and waits for `live`. `fly.toml` stays for the day a
 card exists. Render is IPv4-only, so the API's `DATABASE_URL` there is the
 session pooler, not the direct host; the runbook says so and the first boot
 proved why.
+
+## D33 — One database, many organisations; the organisation is a fence no role climbs (P26a)
+
+**Context.** The owner will run this for other restaurants. Today every
+table assumes one brand: owners see every outlet, the catalogue and menu map
+are global, settings have one `global` scope, and a login that Supabase
+knows but the app does not becomes a dormant profile. Asked and answered
+(`docs/PLAN_MULTI_TENANT.md` §1, §9): logins are made by the owner's
+platform, not by sign-up; each owner runs several outlets; a platform admin
+creates organisations and can look but not touch; owners and the platform
+admin must use a second factor; caps exist and are 100000 for now; the
+platform admin sees a generated password once.
+
+**Decision.** P26a is the tenancy core, on the existing database.
+
+1. **`organisations`** (0026) is the tenant. `outlets`, `profiles`, the
+   SOP catalogue (`sop_categories`, `checklist_templates`), the inventory
+   catalogue (departments, categories, items, aliases), the menu map
+   (`menu_items`, `menu_item_aliases`), `recipes`, `forecast_events`,
+   `app_settings` (new scope `organisation`), `audit_log` and `job_runs`
+   carry `organisation_id`. Content rows with `organisation_id null` are the
+   starter kit (P26c); uniqueness is re-keyed per organisation with a
+   `coalesce(organisation_id, zero-uuid)` index so two tenants may both have
+   an outlet `SP01` or an item `Pork belly`.
+2. **Two organisations from day one.** `akira` (AKIRA, onboarded, the
+   Sapuipara outlet and `management@simplyakira.com`) and `akira-dev` (the
+   seeded outlets, seeded content and every `@akira.test` login). The seeded
+   accounts keep working; nothing about development changes except that it
+   is now visibly a tenant of its own.
+3. **Reach is computed from the organisation, in one place.**
+   `CurrentUser.outlet_ids` is every active outlet of the organisation for an
+   owner or ops manager and the memberships inside it for everyone else; a
+   membership row pointing at another tenant's outlet is not access.
+   `visible_outlet_ids` is `None` only for the platform admin, so no query
+   can widen past the tenant by accident. Every "all outlets for global
+   roles" branch in the services now reads that.
+4. **`platform_admin`** is a role above organisations, created only by
+   `scripts/create_platform_admin.py` (no API grants it). Inside an
+   organisation it is read-only by construction: the identity dependency
+   refuses its writes outside `/platform`, `/users/me`, `/training/me` and
+   `/auth/`, and records each of its reads as an `audit_log` row with the
+   new `read` action, so a tenant can see that the platform looked.
+5. **A second factor for the roles that can do the most damage.** Supabase
+   TOTP; the token's `aal` claim is the proof. The platform admin always,
+   and owners once their organisation carries `onboarded_at`, must present
+   `aal2`; until then every route except `GET /users/me` and the probes
+   refuses with the `mfa-required` problem type, and the web app routes the
+   session to an enrol (QR + first code) or challenge (six digits) screen
+   that talks to Supabase Auth directly. Development-organisation owners are
+   exempt, so the test logins stay usable.
+6. **No self-signup.** An authenticated subject with no profile is nobody:
+   a refusal and no row written. Supabase's "allow new users to sign up" is
+   to be switched off in the dashboard (owner's step, runbook).
+7. **RLS is rewritten rather than duplicated.** `auth_is_global_admin()`
+   now means platform admin and `auth_outlet_ids()` returns the
+   organisation's outlets for owners, so every outlet-keyed policy from 0007
+   onward became organisation-safe without being touched. Organisation-level
+   content gets its own read policies (own rows plus the starter kit).
+8. **Settings.** Everything an owner sets is `organisation` scope now; the
+   resolver reads outlet > organisation > global > default and takes an
+   explicit `organisation_id` for outlet-less reads. The platform's job clock
+   (`jobs.*`) stays global.
+
+**Rejected.** A database per tenant (a free project each, and every
+migration run N times); a `tenant_id` on every row including runs and
+orders (the outlet already implies it, and the joins would drift); making
+`is_global` return False for owners (the word means "every outlet of
+mine", and keeping it kept the readable branches); enforcing MFA for
+managers now (optional enrolment is P26b, with recovery); a storage path
+prefix per organisation in this phase (object keys already start with a
+globally unique outlet id, so nothing collides; the prefix is tidiness for
+P26b).
+
+**Deferred to P26b/P26c** (`docs/PLAN_MULTI_TENANT.md` §6–8): the platform
+screens beyond the organisation list, creating an organisation and its
+owner, the onboarding wizard with the Petpooja uploads, deactivating an
+organisation (and `forget_all_identities()` on it), factor recovery, the
+storage prefix, cloning the starter kit, and `prod_cutover.py` learning
+about organisations.

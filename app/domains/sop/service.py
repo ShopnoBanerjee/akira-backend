@@ -56,6 +56,7 @@ _SUMMARY_SQL = """
       from checklist_templates t
       join sop_categories c on c.id = t.category_id
      where t.deleted_at is null
+       and (t.organisation_id is null or t.organisation_id = cast(:org as uuid))
 """
 
 _ITEMS_SQL = """
@@ -145,10 +146,15 @@ async def _bump_and_snapshot(
 
 
 async def list_templates(
-    db: AsyncSession, *, category_id: uuid.UUID | None, include_inactive: bool
+    db: AsyncSession,
+    *,
+    category_id: uuid.UUID | None,
+    include_inactive: bool,
+    organisation_id: uuid.UUID | None,
 ) -> list[TemplateSummary]:
+    """The organisation's templates plus the starter kit's (D33)."""
     clauses: list[str] = []
-    params: dict[str, Any] = {}
+    params: dict[str, Any] = {"org": organisation_id}
     if category_id is not None:
         clauses.append("t.category_id = :category_id")
         params["category_id"] = category_id
@@ -160,9 +166,16 @@ async def list_templates(
     return [TemplateSummary(**r) for r in rows]
 
 
-async def get_template(db: AsyncSession, template_id: uuid.UUID) -> TemplateDetail:
+async def get_template(
+    db: AsyncSession, template_id: uuid.UUID, *, organisation_id: uuid.UUID | None
+) -> TemplateDetail:
     row = (
-        (await db.execute(text(_SUMMARY_SQL + " and t.id = :id"), {"id": template_id}))
+        (
+            await db.execute(
+                text(_SUMMARY_SQL + " and t.id = :id"),
+                {"id": template_id, "org": organisation_id},
+            )
+        )
         .mappings()
         .first()
     )
@@ -181,8 +194,11 @@ async def create_template(
 ) -> TemplateDetail:
     category = (
         await db.execute(
-            text("select 1 from sop_categories where id = :id"),
-            {"id": payload.category_id},
+            text(
+                "select 1 from sop_categories where id = :id"
+                "   and (organisation_id is null or organisation_id = cast(:org as uuid))"
+            ),
+            {"id": payload.category_id, "org": user.organisation_id},
         )
     ).first()
     if category is None:
@@ -193,15 +209,16 @@ async def create_template(
             text(
                 """
                 insert into checklist_templates
-                    (category_id, name, name_bn, description, frequency, day_part,
-                     version, created_by)
-                values (:category_id, :name, :name_bn, :description,
+                    (organisation_id, category_id, name, name_bn, description, frequency,
+                     day_part, version, created_by)
+                values (:org, :category_id, :name, :name_bn, :description,
                         cast(:frequency as frequency), cast(:day_part as day_part),
                         1, :created_by)
                 returning id
                 """
             ),
             {
+                "org": user.organisation_id,
                 **payload.model_dump(),
                 "frequency": payload.frequency.value,
                 "day_part": payload.day_part.value,
@@ -220,7 +237,7 @@ async def create_template(
         **audit_ctx,
     )
     await db.commit()
-    return await get_template(db, template_id)
+    return await get_template(db, template_id, organisation_id=user.organisation_id)
 
 
 async def update_template(
@@ -231,7 +248,7 @@ async def update_template(
     **audit_ctx: Any,
 ) -> TemplateDetail:
     """Template-level fields only — no version bump. See the module docstring."""
-    before = await get_template(db, template_id)
+    before = await get_template(db, template_id, organisation_id=user.organisation_id)
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
         return before
@@ -263,7 +280,7 @@ async def update_template(
         **audit_ctx,
     )
     await db.commit()
-    return await get_template(db, template_id)
+    return await get_template(db, template_id, organisation_id=user.organisation_id)
 
 
 async def duplicate_template(
@@ -271,22 +288,22 @@ async def duplicate_template(
 ) -> TemplateDetail:
     """A fresh version-1 copy, unassigned. The copy's history starts clean —
     it inherits the items, not the past."""
-    source = await get_template(db, template_id)
+    source = await get_template(db, template_id, organisation_id=user.organisation_id)
 
     new_id = (
         await db.execute(
             text(
                 """
                 insert into checklist_templates
-                    (category_id, name, name_bn, description, frequency, day_part,
-                     version, is_active, created_by)
-                select category_id, 'Copy of ' || name, name_bn, description,
+                    (organisation_id, category_id, name, name_bn, description, frequency,
+                     day_part, version, is_active, created_by)
+                select :org, category_id, 'Copy of ' || name, name_bn, description,
                        frequency, day_part, 1, false, :created_by
                   from checklist_templates where id = :id
                 returning id
                 """
             ),
-            {"id": template_id, "created_by": user.profile_id},
+            {"id": template_id, "created_by": user.profile_id, "org": user.organisation_id},
         )
     ).scalar_one()
 
@@ -326,7 +343,7 @@ async def duplicate_template(
         **audit_ctx,
     )
     await db.commit()
-    return await get_template(db, new_id)
+    return await get_template(db, new_id, organisation_id=user.organisation_id)
 
 
 # ---------------------------------------------------------------------------
@@ -341,7 +358,8 @@ async def add_item(
     payload: ItemFields,
     **audit_ctx: Any,
 ) -> TemplateDetail:
-    await get_template(db, template_id)  # 404 before any write
+    # 404 before any write
+    await get_template(db, template_id, organisation_id=user.organisation_id)
 
     values = payload.model_dump()
     if values.get("value_type") is not None:
@@ -382,7 +400,7 @@ async def add_item(
         **audit_ctx,
     )
     await db.commit()
-    return await get_template(db, template_id)
+    return await get_template(db, template_id, organisation_id=user.organisation_id)
 
 
 async def update_item(
@@ -413,7 +431,7 @@ async def update_item(
 
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
-        return await get_template(db, template_id)
+        return await get_template(db, template_id, organisation_id=user.organisation_id)
     if changes.get("value_type") is not None:
         changes["value_type"] = changes["value_type"].value
 
@@ -440,7 +458,7 @@ async def update_item(
         **audit_ctx,
     )
     await db.commit()
-    return await get_template(db, template_id)
+    return await get_template(db, template_id, organisation_id=user.organisation_id)
 
 
 async def delete_item(
@@ -502,7 +520,7 @@ async def delete_item(
         **audit_ctx,
     )
     await db.commit()
-    return await get_template(db, template_id)
+    return await get_template(db, template_id, organisation_id=user.organisation_id)
 
 
 async def reorder_items(
@@ -569,7 +587,7 @@ async def reorder_items(
         **audit_ctx,
     )
     await db.commit()
-    return await get_template(db, template_id)
+    return await get_template(db, template_id, organisation_id=user.organisation_id)
 
 
 # ---------------------------------------------------------------------------

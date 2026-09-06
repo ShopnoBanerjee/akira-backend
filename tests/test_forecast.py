@@ -303,8 +303,13 @@ class TestStoreAndAccuracy:
         target = date(2026, 9, 5)
         await session.execute(
             text(
-                "insert into forecast_events (outlet_id, event_date, multiplier, label)"
-                " values (null, :d, 1.5, 'group holiday'), (:o, :d, 1.1, 'outlet quiet')"
+                "insert into forecast_events"
+                "   (organisation_id, outlet_id, event_date, multiplier, label)"
+                " select organisation_id, null, cast(:d as date), 1.5, 'group holiday'"
+                "   from outlets where id = :o"
+                " union all"
+                " select organisation_id, id, cast(:d as date), 1.1, 'outlet quiet'"
+                "   from outlets where id = :o"
             ),
             {"o": outlet, "d": target},
         )
@@ -319,8 +324,10 @@ class TestStoreAndAccuracy:
         target = date(2026, 9, 5)
         await session.execute(
             text(
-                "insert into forecast_events (outlet_id, event_date, multiplier, label)"
-                " values (:o, :d, 2.0, 'their festival')"
+                "insert into forecast_events"
+                "   (organisation_id, outlet_id, event_date, multiplier, label)"
+                " select organisation_id, id, cast(:d as date), 2.0, 'their festival'"
+                "   from outlets where id = :o"
             ),
             {"o": theirs, "d": target},
         )

@@ -7,6 +7,16 @@ section 1 so nothing below is an assumption.
 
 ---
 
+> **Status (7 Sep 2026):** P26a shipped as D33 — migrations 0025/0026,
+> organisation-scoped services and RLS, `platform_admin`, the MFA gate, no
+> self-signup, `GET /platform/organisations`, the web MFA and platform
+> screens, `tests/test_tenancy.py`. Differences from the plan below: the
+> migration is two files (enum values cannot be used in the transaction
+> that adds them); `is_global` keeps its meaning ("every outlet of my
+> organisation") and `visible_outlet_ids` carries the no-filter case; the
+> storage prefix, manager enrolment and factor recovery moved to P26b.
+> P26b and P26c are as written in §6–8.
+
 ## 0. In one paragraph
 
 Today the system is one brand: one set of SOP templates, one inventory

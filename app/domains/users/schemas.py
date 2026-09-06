@@ -26,6 +26,16 @@ class DeviceSummary(BaseModel):
     label: str
 
 
+class OrganisationSummary(BaseModel):
+    """The tenant the caller belongs to (D33)."""
+
+    organisation_id: uuid.UUID
+    slug: str
+    name: str
+    #: Onboarding complete: the organisation is live and its owners owe MFA.
+    onboarded: bool
+
+
 class MeResponse(BaseModel):
     profile_id: uuid.UUID
     full_name: str
@@ -36,8 +46,19 @@ class MeResponse(BaseModel):
     is_active: bool
     #: True when the role belongs in /app rather than /floor.
     is_management: bool
-    #: True for owner and ops_manager, who reach every outlet.
+    #: True for owner and ops_manager, who reach every outlet of their
+    #: organisation.
     is_global: bool
+    #: The one role above organisations (D33). Read-only inside them.
+    is_platform_admin: bool = False
+    #: None only for a platform admin.
+    organisation: OrganisationSummary | None = None
+    #: This login must present a second factor (D33)...
+    mfa_required: bool = False
+    #: ...and the current session has. When required and not verified, every
+    #: other endpoint refuses with the `mfa-required` problem type; the client
+    #: enrols or challenges through Supabase Auth and signs in again.
+    mfa_verified: bool = False
     has_pin: bool
     #: Owner-granted: may restart training for people at their outlets (D31).
     can_restart_training: bool

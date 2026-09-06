@@ -20,23 +20,24 @@
 -- Idempotent: re-running updates labels and adds nothing twice.
 -- -------------------------------------------------------------------------
 
-insert into outlets (code, name, city, geo_lat, geo_lng, opened_on) values
-    ('AKR-NT01', 'AKIRA New Town', 'Kolkata', 22.5023, 88.3852, '2026-07-17'::date),
-    ('AKR-DEV02', 'Dev Outlet 2', 'Kolkata', 22.5726, 88.3639, null::date)
-on conflict (code) do update set
+-- Seeded outlets and content belong to the development organisation (0026).
+insert into outlets (organisation_id, code, name, city, geo_lat, geo_lng, opened_on) values
+    ('a1000000-0000-4000-8000-000000000002', 'AKR-NT01', 'AKIRA New Town', 'Kolkata', 22.5023, 88.3852, '2026-07-17'::date),
+    ('a1000000-0000-4000-8000-000000000002', 'AKR-DEV02', 'Dev Outlet 2', 'Kolkata', 22.5726, 88.3639, null::date)
+on conflict (organisation_id, code) do update set
     name = excluded.name,
     city = excluded.city,
     geo_lat = excluded.geo_lat,
     geo_lng = excluded.geo_lng;
 
-insert into sop_categories (key, label, label_bn, sort_order, icon) values
-    ('opening', 'Opening', 'খোলা', 10, 'sunrise'),
-    ('closing', 'Closing', 'বন্ধ', 20, 'moon'),
-    ('cleaning', 'Cleaning', 'পরিষ্কার', 30, 'spray-can'),
-    ('food_safety', 'Food Safety', 'খাদ্য নিরাপত্তা', 40, 'thermometer'),
-    ('maintenance', 'Maintenance', 'রক্ষণাবেক্ষণ', 50, 'wrench'),
-    ('inventory', 'Inventory', 'মজুদ', 60, 'package')
-on conflict (key) do update set
+insert into sop_categories (organisation_id, key, label, label_bn, sort_order, icon) values
+    ('a1000000-0000-4000-8000-000000000002', 'opening', 'Opening', 'খোলা', 10, 'sunrise'),
+    ('a1000000-0000-4000-8000-000000000002', 'closing', 'Closing', 'বন্ধ', 20, 'moon'),
+    ('a1000000-0000-4000-8000-000000000002', 'cleaning', 'Cleaning', 'পরিষ্কার', 30, 'spray-can'),
+    ('a1000000-0000-4000-8000-000000000002', 'food_safety', 'Food Safety', 'খাদ্য নিরাপত্তা', 40, 'thermometer'),
+    ('a1000000-0000-4000-8000-000000000002', 'maintenance', 'Maintenance', 'রক্ষণাবেক্ষণ', 50, 'wrench'),
+    ('a1000000-0000-4000-8000-000000000002', 'inventory', 'Inventory', 'মজুদ', 60, 'package')
+on conflict (coalesce(organisation_id, '00000000-0000-0000-0000-000000000000'), key) do update set
     label = excluded.label,
     label_bn = excluded.label_bn,
     sort_order = excluded.sort_order,
@@ -56,10 +57,10 @@ begin
 
     if v_template_id is null then
         insert into checklist_templates
-            (category_id, name, name_bn, description, frequency, day_part, version)
-        select c.id, 'Kitchen Cleaning — Daily', 'দৈনিক রান্নাঘর পরিষ্কার', 'Section A of the Kitchen Cleaning & Sanitation sheet.',
+            (organisation_id, category_id, name, name_bn, description, frequency, day_part, version)
+        select 'a1000000-0000-4000-8000-000000000002', c.id, 'Kitchen Cleaning — Daily', 'দৈনিক রান্নাঘর পরিষ্কার', 'Section A of the Kitchen Cleaning & Sanitation sheet.',
                'daily'::frequency, 'closing'::day_part, 1
-          from sop_categories c where c.key = 'cleaning'
+          from sop_categories c where c.key = 'cleaning' and c.organisation_id = 'a1000000-0000-4000-8000-000000000002'
         returning id into v_template_id;
 
         insert into checklist_template_items
@@ -172,10 +173,10 @@ begin
 
     if v_template_id is null then
         insert into checklist_templates
-            (category_id, name, name_bn, description, frequency, day_part, version)
-        select c.id, 'Kitchen Cleaning — Alternate Day', 'একদিন অন্তর রান্নাঘর পরিষ্কার', 'Section B of the Kitchen Cleaning & Sanitation sheet.',
+            (organisation_id, category_id, name, name_bn, description, frequency, day_part, version)
+        select 'a1000000-0000-4000-8000-000000000002', c.id, 'Kitchen Cleaning — Alternate Day', 'একদিন অন্তর রান্নাঘর পরিষ্কার', 'Section B of the Kitchen Cleaning & Sanitation sheet.',
                'alternate_day'::frequency, 'closing'::day_part, 1
-          from sop_categories c where c.key = 'cleaning'
+          from sop_categories c where c.key = 'cleaning' and c.organisation_id = 'a1000000-0000-4000-8000-000000000002'
         returning id into v_template_id;
 
         insert into checklist_template_items
@@ -288,10 +289,10 @@ begin
 
     if v_template_id is null then
         insert into checklist_templates
-            (category_id, name, name_bn, description, frequency, day_part, version)
-        select c.id, 'Deep Clean — Non-veg Fridge (Mon)', 'গভীর পরিষ্কার — আমিষ ফ্রিজ (সোম)', 'Monday slot of the weekly deep-clean rota.',
+            (organisation_id, category_id, name, name_bn, description, frequency, day_part, version)
+        select 'a1000000-0000-4000-8000-000000000002', c.id, 'Deep Clean — Non-veg Fridge (Mon)', 'গভীর পরিষ্কার — আমিষ ফ্রিজ (সোম)', 'Monday slot of the weekly deep-clean rota.',
                'weekly'::frequency, 'closing'::day_part, 1
-          from sop_categories c where c.key = 'cleaning'
+          from sop_categories c where c.key = 'cleaning' and c.organisation_id = 'a1000000-0000-4000-8000-000000000002'
         returning id into v_template_id;
 
         insert into checklist_template_items
@@ -344,10 +345,10 @@ begin
 
     if v_template_id is null then
         insert into checklist_templates
-            (category_id, name, name_bn, description, frequency, day_part, version)
-        select c.id, 'Deep Clean — Veg Chiller (Tue)', 'গভীর পরিষ্কার — ভেজিটেবল চিলার (মঙ্গল)', 'Tuesday slot of the weekly deep-clean rota.',
+            (organisation_id, category_id, name, name_bn, description, frequency, day_part, version)
+        select 'a1000000-0000-4000-8000-000000000002', c.id, 'Deep Clean — Veg Chiller (Tue)', 'গভীর পরিষ্কার — ভেজিটেবল চিলার (মঙ্গল)', 'Tuesday slot of the weekly deep-clean rota.',
                'weekly'::frequency, 'closing'::day_part, 1
-          from sop_categories c where c.key = 'cleaning'
+          from sop_categories c where c.key = 'cleaning' and c.organisation_id = 'a1000000-0000-4000-8000-000000000002'
         returning id into v_template_id;
 
         insert into checklist_template_items
@@ -400,10 +401,10 @@ begin
 
     if v_template_id is null then
         insert into checklist_templates
-            (category_id, name, name_bn, description, frequency, day_part, version)
-        select c.id, 'Deep Clean — Veg Freezer (Wed)', 'গভীর পরিষ্কার — সবজি ফ্রিজার (বুধ)', 'Wednesday slot of the weekly deep-clean rota.',
+            (organisation_id, category_id, name, name_bn, description, frequency, day_part, version)
+        select 'a1000000-0000-4000-8000-000000000002', c.id, 'Deep Clean — Veg Freezer (Wed)', 'গভীর পরিষ্কার — সবজি ফ্রিজার (বুধ)', 'Wednesday slot of the weekly deep-clean rota.',
                'weekly'::frequency, 'closing'::day_part, 1
-          from sop_categories c where c.key = 'cleaning'
+          from sop_categories c where c.key = 'cleaning' and c.organisation_id = 'a1000000-0000-4000-8000-000000000002'
         returning id into v_template_id;
 
         insert into checklist_template_items
@@ -456,10 +457,10 @@ begin
 
     if v_template_id is null then
         insert into checklist_templates
-            (category_id, name, name_bn, description, frequency, day_part, version)
-        select c.id, 'Deep Clean — Staff Toilet (Thu)', 'গভীর পরিষ্কার — কর্মচারীদের শৌচাগার (বৃহস্পতি)', 'Thursday slot of the weekly deep-clean rota.',
+            (organisation_id, category_id, name, name_bn, description, frequency, day_part, version)
+        select 'a1000000-0000-4000-8000-000000000002', c.id, 'Deep Clean — Staff Toilet (Thu)', 'গভীর পরিষ্কার — কর্মচারীদের শৌচাগার (বৃহস্পতি)', 'Thursday slot of the weekly deep-clean rota.',
                'weekly'::frequency, 'closing'::day_part, 1
-          from sop_categories c where c.key = 'cleaning'
+          from sop_categories c where c.key = 'cleaning' and c.organisation_id = 'a1000000-0000-4000-8000-000000000002'
         returning id into v_template_id;
 
         insert into checklist_template_items
@@ -512,10 +513,10 @@ begin
 
     if v_template_id is null then
         insert into checklist_templates
-            (category_id, name, name_bn, description, frequency, day_part, version)
-        select c.id, 'Maintenance Clean (Fri & Sat)', 'রক্ষণাবেক্ষণমূলক পরিষ্কার (শুক্র ও শনি)', 'Friday and Saturday slots. Maintenance only, explicitly not a deep clean.',
+            (organisation_id, category_id, name, name_bn, description, frequency, day_part, version)
+        select 'a1000000-0000-4000-8000-000000000002', c.id, 'Maintenance Clean (Fri & Sat)', 'রক্ষণাবেক্ষণমূলক পরিষ্কার (শুক্র ও শনি)', 'Friday and Saturday slots. Maintenance only, explicitly not a deep clean.',
                'weekly'::frequency, 'closing'::day_part, 1
-          from sop_categories c where c.key = 'cleaning'
+          from sop_categories c where c.key = 'cleaning' and c.organisation_id = 'a1000000-0000-4000-8000-000000000002'
         returning id into v_template_id;
 
         insert into checklist_template_items
@@ -568,10 +569,10 @@ begin
 
     if v_template_id is null then
         insert into checklist_templates
-            (category_id, name, name_bn, description, frequency, day_part, version)
-        select c.id, 'Floor & Dining — Daily', 'দৈনিক ফ্লোর ও ডাইনিং', 'Dining-floor half of the Service & Housekeeping daily sheet.',
+            (organisation_id, category_id, name, name_bn, description, frequency, day_part, version)
+        select 'a1000000-0000-4000-8000-000000000002', c.id, 'Floor & Dining — Daily', 'দৈনিক ফ্লোর ও ডাইনিং', 'Dining-floor half of the Service & Housekeeping daily sheet.',
                'daily'::frequency, 'opening'::day_part, 1
-          from sop_categories c where c.key = 'opening'
+          from sop_categories c where c.key = 'opening' and c.organisation_id = 'a1000000-0000-4000-8000-000000000002'
         returning id into v_template_id;
 
         insert into checklist_template_items
@@ -804,10 +805,10 @@ begin
 
     if v_template_id is null then
         insert into checklist_templates
-            (category_id, name, name_bn, description, frequency, day_part, version)
-        select c.id, 'Washroom & Waste — Daily', 'দৈনিক শৌচাগার ও বর্জ্য', 'Washroom half of the Service & Housekeeping daily sheet.',
+            (organisation_id, category_id, name, name_bn, description, frequency, day_part, version)
+        select 'a1000000-0000-4000-8000-000000000002', c.id, 'Washroom & Waste — Daily', 'দৈনিক শৌচাগার ও বর্জ্য', 'Washroom half of the Service & Housekeeping daily sheet.',
                'daily'::frequency, 'closing'::day_part, 1
-          from sop_categories c where c.key = 'closing'
+          from sop_categories c where c.key = 'closing' and c.organisation_id = 'a1000000-0000-4000-8000-000000000002'
         returning id into v_template_id;
 
         insert into checklist_template_items
@@ -960,10 +961,10 @@ begin
 
     if v_template_id is null then
         insert into checklist_templates
-            (category_id, name, name_bn, description, frequency, day_part, version)
-        select c.id, 'Dining Deep Clean', 'ডাইনিং গভীর পরিষ্কার', 'Section B periodic tasks. Days assumed Mon/Wed/Fri — the sheet does not name them.',
+            (organisation_id, category_id, name, name_bn, description, frequency, day_part, version)
+        select 'a1000000-0000-4000-8000-000000000002', c.id, 'Dining Deep Clean', 'ডাইনিং গভীর পরিষ্কার', 'Section B periodic tasks. Days assumed Mon/Wed/Fri — the sheet does not name them.',
                'weekly'::frequency, 'closing'::day_part, 1
-          from sop_categories c where c.key = 'cleaning'
+          from sop_categories c where c.key = 'cleaning' and c.organisation_id = 'a1000000-0000-4000-8000-000000000002'
         returning id into v_template_id;
 
         insert into checklist_template_items
@@ -1036,10 +1037,10 @@ begin
 
     if v_template_id is null then
         insert into checklist_templates
-            (category_id, name, name_bn, description, frequency, day_part, version)
-        select c.id, 'Fortnightly Maintenance', 'পাক্ষিক রক্ষণাবেক্ষণ', 'Section B every-15-days tasks.',
+            (organisation_id, category_id, name, name_bn, description, frequency, day_part, version)
+        select 'a1000000-0000-4000-8000-000000000002', c.id, 'Fortnightly Maintenance', 'পাক্ষিক রক্ষণাবেক্ষণ', 'Section B every-15-days tasks.',
                'fortnightly'::frequency, 'mid'::day_part, 1
-          from sop_categories c where c.key = 'maintenance'
+          from sop_categories c where c.key = 'maintenance' and c.organisation_id = 'a1000000-0000-4000-8000-000000000002'
         returning id into v_template_id;
 
         insert into checklist_template_items
@@ -1112,10 +1113,10 @@ begin
 
     if v_template_id is null then
         insert into checklist_templates
-            (category_id, name, name_bn, description, frequency, day_part, version)
-        select c.id, 'Kitchen Prep Readiness', 'রান্নাঘর প্রস্তুতি', 'Section A of the Mise-en-place sheet. Minimums are the printed par levels.',
+            (organisation_id, category_id, name, name_bn, description, frequency, day_part, version)
+        select 'a1000000-0000-4000-8000-000000000002', c.id, 'Kitchen Prep Readiness', 'রান্নাঘর প্রস্তুতি', 'Section A of the Mise-en-place sheet. Minimums are the printed par levels.',
                'daily'::frequency, 'opening'::day_part, 1
-          from sop_categories c where c.key = 'inventory'
+          from sop_categories c where c.key = 'inventory' and c.organisation_id = 'a1000000-0000-4000-8000-000000000002'
         returning id into v_template_id;
 
         insert into checklist_template_items
@@ -1428,10 +1429,10 @@ begin
 
     if v_template_id is null then
         insert into checklist_templates
-            (category_id, name, name_bn, description, frequency, day_part, version)
-        select c.id, 'Bar Stock Readiness', 'বার স্টক প্রস্তুতি', 'Section B of the Mise-en-place sheet.',
+            (organisation_id, category_id, name, name_bn, description, frequency, day_part, version)
+        select 'a1000000-0000-4000-8000-000000000002', c.id, 'Bar Stock Readiness', 'বার স্টক প্রস্তুতি', 'Section B of the Mise-en-place sheet.',
                'daily'::frequency, 'opening'::day_part, 1
-          from sop_categories c where c.key = 'inventory'
+          from sop_categories c where c.key = 'inventory' and c.organisation_id = 'a1000000-0000-4000-8000-000000000002'
         returning id into v_template_id;
 
         insert into checklist_template_items
@@ -1544,10 +1545,10 @@ begin
 
     if v_template_id is null then
         insert into checklist_templates
-            (category_id, name, name_bn, description, frequency, day_part, version)
-        select c.id, 'Food Safety Daily', 'দৈনিক খাদ্য নিরাপত্তা', 'Not from AKIRA''s paper. Temperature bands are industry defaults - correct them to what the equipment actually holds.',
+            (organisation_id, category_id, name, name_bn, description, frequency, day_part, version)
+        select 'a1000000-0000-4000-8000-000000000002', c.id, 'Food Safety Daily', 'দৈনিক খাদ্য নিরাপত্তা', 'Not from AKIRA''s paper. Temperature bands are industry defaults - correct them to what the equipment actually holds.',
                'daily'::frequency, 'mid'::day_part, 1
-          from sop_categories c where c.key = 'food_safety'
+          from sop_categories c where c.key = 'food_safety' and c.organisation_id = 'a1000000-0000-4000-8000-000000000002'
         returning id into v_template_id;
 
         insert into checklist_template_items

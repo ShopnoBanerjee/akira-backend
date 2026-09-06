@@ -20,9 +20,17 @@ from app.domains.outlets.schemas import (
 async def list_for(
     db: AsyncSession, user: CurrentUser, *, include_inactive: bool = False
 ) -> list[OutletResponse]:
-    """Owners and ops managers see every outlet; everyone else sees their own."""
-    if user.is_global:
+    """Owners and ops managers see every outlet of their organisation; everyone
+    else sees their own. A platform admin sees every organisation's."""
+    if user.is_platform_admin:
         rows = await repository.list_outlets(db, outlet_ids=None, include_inactive=include_inactive)
+    elif user.is_global:
+        rows = await repository.list_outlets(
+            db,
+            outlet_ids=None,
+            include_inactive=include_inactive,
+            organisation_id=user.organisation_id,
+        )
     elif not user.outlet_ids:
         rows = []
     else:
@@ -55,15 +63,27 @@ async def create(
     user_agent: str | None = None,
 ) -> OutletResponse:
     code = payload.code.upper()
-    if await repository.code_exists(db, code):
+    if user.organisation_id is None:
+        raise ForbiddenError("An outlet belongs to an organisation; this login has none.")
+    if await repository.code_exists(db, code, user.organisation_id):
         raise ConflictError(
             f"An outlet with code {code} already exists.",
             extra={"field": "code"},
         )
+    used, cap = await repository.outlet_headroom(db, user.organisation_id)
+    if used >= cap:
+        raise ForbiddenError(
+            f"This organisation is at its limit of {cap} outlets.",
+            extra={"max_outlets": cap, "outlets": used},
+        )
 
     values: dict[str, Any] = payload.model_dump()
     values["code"] = code
+    values["organisation_id"] = user.organisation_id
     outlet_id = await repository.insert_outlet(db, values)
+    # Every owner's cached identity lists the organisation's outlets; there is
+    # now one more.
+    forget_all_identities()
 
     row = await repository.get_outlet(db, outlet_id)
     assert row is not None

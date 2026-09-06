@@ -16,6 +16,7 @@ from app.core.deps import CurrentUser
 from app.core.enums import UserRole
 from app.core.errors import ConflictError, NotFoundError
 from app.domains.sales import service
+from tests.conftest import DEV_ORG, dev_outlet_ids
 
 pytestmark = pytest.mark.asyncio
 
@@ -51,8 +52,9 @@ async def _owner(db: AsyncSession) -> CurrentUser:
     )
     await db.execute(
         text(
-            "insert into profiles (id, full_name, global_role, is_active)"
-            " values (:id, 'Alias Test Owner', 'owner', true)"
+            "insert into profiles (id, full_name, global_role, is_active, organisation_id)"
+            " values (:id, 'Alias Test Owner', 'owner', true,"
+            " (select organisation_id from outlets where code = 'AKR-NT01'))"
         ),
         {"id": pid},
     )
@@ -63,6 +65,8 @@ async def _owner(db: AsyncSession) -> CurrentUser:
         email=None,
         global_role=UserRole.OWNER,
         is_active=True,
+        organisation_id=DEV_ORG,
+        organisation_outlet_ids=dev_outlet_ids(),
     )
 
 
@@ -181,5 +185,5 @@ class TestOneSpellingOneItem:
         await service.delete_menu_alias(session, owner, uuid.UUID(added["id"]))
         mix = await service.menu_mix(session, owner, outlet_id=outlet, date_from=None, date_to=None)
         assert mix["measured"]["unmapped_item_names"] == ["Donburi Chicken"]
-        items = await service.list_menu_items(session)
+        items = await service.list_menu_items(session, organisation_id=DEV_ORG)
         assert all(i["aliases"] == [] for i in items)

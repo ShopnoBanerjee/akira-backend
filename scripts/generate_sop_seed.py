@@ -479,27 +479,31 @@ def main() -> int:
     a("-- " + "-" * 73)
     a("")
 
-    a("insert into outlets (code, name, city, geo_lat, geo_lng, opened_on) values")
+    a("-- Seeded outlets and content belong to the development organisation (0026).")
+    a("insert into outlets (organisation_id, code, name, city, geo_lat, geo_lng, opened_on) values")
     a(
         ",\n".join(
-            f"    ({q(c)}, {q(n)}, {q(ct)}, {num(la)}, {num(lo)}, {q(op)}::date)"
+            f"    ('a1000000-0000-4000-8000-000000000002', {q(c)}, {q(n)}, {q(ct)}, {num(la)}, {num(lo)}, {q(op)}::date)"
             for c, n, ct, la, lo, op in OUTLETS
         )
     )
-    a("on conflict (code) do update set")
+    a("on conflict (organisation_id, code) do update set")
     a("    name = excluded.name,")
     a("    city = excluded.city,")
     a("    geo_lat = excluded.geo_lat,")
     a("    geo_lng = excluded.geo_lng;")
     a("")
 
-    a("insert into sop_categories (key, label, label_bn, sort_order, icon) values")
+    a("insert into sop_categories (organisation_id, key, label, label_bn, sort_order, icon) values")
     a(
         ",\n".join(
-            f"    ({q(k)}, {q(la)}, {q(bn)}, {o}, {q(ic)})" for k, la, bn, o, ic in CATEGORIES
+            f"    ('a1000000-0000-4000-8000-000000000002', {q(k)}, {q(la)}, {q(bn)}, {o}, {q(ic)})"
+            for k, la, bn, o, ic in CATEGORIES
         )
     )
-    a("on conflict (key) do update set")
+    a(
+        "on conflict (coalesce(organisation_id, '00000000-0000-0000-0000-000000000000'), key) do update set"
+    )
     a("    label = excluded.label,")
     a("    label_bn = excluded.label_bn,")
     a("    sort_order = excluded.sort_order,")
@@ -537,10 +541,16 @@ def main() -> int:
         a("")
         a("    if v_template_id is null then")
         a("        insert into checklist_templates")
-        a("            (category_id, name, name_bn, description, frequency, day_part, version)")
-        a(f"        select c.id, {q(name)}, {q(name_bn)}, {q(desc)},")
+        a(
+            "            (organisation_id, category_id, name, name_bn, description, frequency, day_part, version)"
+        )
+        a(
+            f"        select 'a1000000-0000-4000-8000-000000000002', c.id, {q(name)}, {q(name_bn)}, {q(desc)},"
+        )
         a(f"               {q(freq)}::frequency, {q(part)}::day_part, 1")
-        a(f"          from sop_categories c where c.key = {q(cat)}")
+        a(
+            f"          from sop_categories c where c.key = {q(cat)} and c.organisation_id = 'a1000000-0000-4000-8000-000000000002'"
+        )
         a("        returning id into v_template_id;")
         a("")
 

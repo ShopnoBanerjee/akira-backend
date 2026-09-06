@@ -68,8 +68,13 @@ class TestNobodyEscalates:
 
 
 class TestWhatEachRoleMayGrant:
-    def test_owner_may_grant_anything(self) -> None:
-        assert set(grantable_roles(OWNER)) == set(ALL_ROLES)
+    def test_owner_may_grant_anything_inside_the_organisation(self) -> None:
+        """Everything but the platform's own role, which no API call grants (D33)."""
+        assert set(grantable_roles(OWNER)) == set(ALL_ROLES) - {UserRole.PLATFORM_ADMIN}
+
+    def test_nobody_grants_platform_admin(self) -> None:
+        for actor in (OWNER, OPS):
+            assert not can_grant_role(actor, UserRole.PLATFORM_ADMIN)
 
     def test_ops_manager_grants_strictly_below(self) -> None:
         assert set(grantable_roles(OPS)) == {

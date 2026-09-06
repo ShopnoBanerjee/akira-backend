@@ -14,49 +14,50 @@
 -- Idempotent: re-running updates labels and leaves existing items alone.
 -- -------------------------------------------------------------------------
 
-insert into inventory_departments (key, label, label_bn, sort_order) values
-    ('fnb_hot_range', 'F&B Production - Hot Range', 'এফ অ্যান্ড বি প্রোডাকশন - হট রেঞ্জ', 10),
-    ('fnb_desserts', 'F&B Production - Desserts', 'এফ অ্যান্ড বি প্রোডাকশন - ডেজার্ট', 20),
-    ('beverages', 'Beverages / Bar Counter', 'পানীয় / বার কাউন্টার', 30),
-    ('fnb_service', 'F&B Service', 'এফ অ্যান্ড বি সার্ভিস', 40),
-    ('housekeeping', 'Housekeeping', 'হাউসকিপিং', 50)
-on conflict (key) do update set
+-- Seeded catalogue belongs to the development organisation (0026).
+insert into inventory_departments (organisation_id, key, label, label_bn, sort_order) values
+    ('a1000000-0000-4000-8000-000000000002', 'fnb_hot_range', 'F&B Production - Hot Range', 'এফ অ্যান্ড বি প্রোডাকশন - হট রেঞ্জ', 10),
+    ('a1000000-0000-4000-8000-000000000002', 'fnb_desserts', 'F&B Production - Desserts', 'এফ অ্যান্ড বি প্রোডাকশন - ডেজার্ট', 20),
+    ('a1000000-0000-4000-8000-000000000002', 'beverages', 'Beverages / Bar Counter', 'পানীয় / বার কাউন্টার', 30),
+    ('a1000000-0000-4000-8000-000000000002', 'fnb_service', 'F&B Service', 'এফ অ্যান্ড বি সার্ভিস', 40),
+    ('a1000000-0000-4000-8000-000000000002', 'housekeeping', 'Housekeeping', 'হাউসকিপিং', 50)
+on conflict (coalesce(organisation_id, '00000000-0000-0000-0000-000000000000'), key) do update set
     label = excluded.label,
     label_bn = excluded.label_bn,
     sort_order = excluded.sort_order;
 
-insert into inventory_categories (key, label, label_bn, sort_order) values
-    ('vegetables', 'Vegetables', 'সবজি', 10),
-    ('fruits', 'Fruits', 'ফল', 15),
-    ('herbs', 'Herbs', 'ভেষজ', 20),
-    ('spices', 'Spices', 'মশলা', 30),
-    ('sauces', 'Sauces & Dressings', 'সস ও ড্রেসিং', 40),
-    ('oils', 'Oils', 'তেল', 50),
-    ('meat', 'Meat', 'মাংস', 60),
-    ('poultry', 'Poultry', 'হাঁস-মুরগি', 65),
-    ('dairy', 'Dairy', 'দুগ্ধজাত', 70),
-    ('rice', 'Rice', 'চাল', 80),
-    ('pulses', 'Pulses', 'ডাল', 85),
-    ('flour', 'Flour', 'আটা', 90),
-    ('prep', 'Prepared Components', 'প্রস্তুত উপকরণ', 100),
-    ('desserts', 'Dessert Ingredients', 'ডেজার্ট উপকরণ', 110),
-    ('beverage', 'Beverage', 'পানীয়', 120),
-    ('alcohol', 'Alcohol', 'অ্যালকোহল', 130),
-    ('sweetener', 'Sweeteners', 'মিষ্টিকারক', 140),
-    ('snacks', 'Snacks', 'স্ন্যাকস', 150),
-    ('dry_goods', 'Dry Goods', 'শুকনো সামগ্রী', 160),
-    ('packaging', 'Packaging', 'প্যাকেজিং', 170),
-    ('cleaning', 'Cleaning', 'পরিষ্কারক', 180),
-    ('uniform', 'Uniform', 'ইউনিফর্ম', 190)
-on conflict (key) do update set
+insert into inventory_categories (organisation_id, key, label, label_bn, sort_order) values
+    ('a1000000-0000-4000-8000-000000000002', 'vegetables', 'Vegetables', 'সবজি', 10),
+    ('a1000000-0000-4000-8000-000000000002', 'fruits', 'Fruits', 'ফল', 15),
+    ('a1000000-0000-4000-8000-000000000002', 'herbs', 'Herbs', 'ভেষজ', 20),
+    ('a1000000-0000-4000-8000-000000000002', 'spices', 'Spices', 'মশলা', 30),
+    ('a1000000-0000-4000-8000-000000000002', 'sauces', 'Sauces & Dressings', 'সস ও ড্রেসিং', 40),
+    ('a1000000-0000-4000-8000-000000000002', 'oils', 'Oils', 'তেল', 50),
+    ('a1000000-0000-4000-8000-000000000002', 'meat', 'Meat', 'মাংস', 60),
+    ('a1000000-0000-4000-8000-000000000002', 'poultry', 'Poultry', 'হাঁস-মুরগি', 65),
+    ('a1000000-0000-4000-8000-000000000002', 'dairy', 'Dairy', 'দুগ্ধজাত', 70),
+    ('a1000000-0000-4000-8000-000000000002', 'rice', 'Rice', 'চাল', 80),
+    ('a1000000-0000-4000-8000-000000000002', 'pulses', 'Pulses', 'ডাল', 85),
+    ('a1000000-0000-4000-8000-000000000002', 'flour', 'Flour', 'আটা', 90),
+    ('a1000000-0000-4000-8000-000000000002', 'prep', 'Prepared Components', 'প্রস্তুত উপকরণ', 100),
+    ('a1000000-0000-4000-8000-000000000002', 'desserts', 'Dessert Ingredients', 'ডেজার্ট উপকরণ', 110),
+    ('a1000000-0000-4000-8000-000000000002', 'beverage', 'Beverage', 'পানীয়', 120),
+    ('a1000000-0000-4000-8000-000000000002', 'alcohol', 'Alcohol', 'অ্যালকোহল', 130),
+    ('a1000000-0000-4000-8000-000000000002', 'sweetener', 'Sweeteners', 'মিষ্টিকারক', 140),
+    ('a1000000-0000-4000-8000-000000000002', 'snacks', 'Snacks', 'স্ন্যাকস', 150),
+    ('a1000000-0000-4000-8000-000000000002', 'dry_goods', 'Dry Goods', 'শুকনো সামগ্রী', 160),
+    ('a1000000-0000-4000-8000-000000000002', 'packaging', 'Packaging', 'প্যাকেজিং', 170),
+    ('a1000000-0000-4000-8000-000000000002', 'cleaning', 'Cleaning', 'পরিষ্কারক', 180),
+    ('a1000000-0000-4000-8000-000000000002', 'uniform', 'Uniform', 'ইউনিফর্ম', 190)
+on conflict (coalesce(organisation_id, '00000000-0000-0000-0000-000000000000'), key) do update set
     label = excluded.label,
     label_bn = excluded.label_bn,
     sort_order = excluded.sort_order;
 
 -- Items are matched to their department and category by key, so this file
 -- never hardcodes a uuid.
-insert into inventory_items (name, name_bn, department_id, category_id, unit, notes)
-select v.name, v.name_bn, d.id, c.id, v.unit::inventory_unit, v.notes
+insert into inventory_items (organisation_id, name, name_bn, department_id, category_id, unit, notes)
+select 'a1000000-0000-4000-8000-000000000002', v.name, v.name_bn, d.id, c.id, v.unit::inventory_unit, v.notes
 from (values
     ('Garbage Bag', 'ময়লার ব্যাগ', 'housekeeping', 'cleaning', 'piece', null),
     ('16x20 Plastic Bag', '১৬x২০ প্লাস্টিকের ব্যাগ', 'housekeeping', 'packaging', 'piece', null),

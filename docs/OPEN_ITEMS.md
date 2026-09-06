@@ -123,6 +123,38 @@ and stays here:
 
 ---
 
+## Multi-tenancy, phase 1 shipped; phases 2 and 3 are code (P26a, D33)
+
+### Nothing creates an organisation yet
+
+`organisations` exists with AKIRA and the development tenant in it, every
+service and policy is scoped, and `GET /platform/organisations` lists them —
+but creating one, its owner, and walking it through the Petpooja uploads is
+P26b (`docs/PLAN_MULTI_TENANT.md` §6–7). Until then a second real tenant is
+a SQL insert plus `scripts/create_platform_admin.py`-style account creation
+by hand. Deactivating an organisation (and dropping its cached identities)
+is in the same phase.
+
+### The starter kit is empty
+
+Content rows with `organisation_id null` are readable by every tenant and
+editable by none; there are none yet. P26c copies AKIRA's checklists and
+catalogue into that library and clones them into a new organisation at
+onboarding. A new tenant today starts with nothing.
+
+### Second-factor recovery is by hand
+
+An owner who loses their authenticator cannot sign in until their factors
+are removed in the Supabase dashboard (Authentication → Users → the user →
+factors). The platform-admin route for that, audited, is P26b. Managers
+cannot enrol yet either; that is optional enrolment in the same phase.
+
+### Two Supabase switches are the owner's
+
+MFA must be enabled and email sign-ups disabled in the dashboard
+(RUNBOOK_DEPLOY §3). The API refuses an unknown subject either way; the
+switch stops Supabase from minting the account in the first place.
+
 ## Waiting on the owner's review
 
 ### The walkthrough's wording

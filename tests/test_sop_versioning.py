@@ -20,6 +20,7 @@ from app.domains.sop.schemas import (
     UpdateTemplateItemRequest,
     UpdateTemplateRequest,
 )
+from tests.conftest import DEV_ORG, dev_outlet_ids
 
 pytestmark = pytest.mark.asyncio
 
@@ -33,6 +34,8 @@ def owner() -> CurrentUser:
         email="owner@test",
         global_role=UserRole.OWNER,
         is_active=True,
+        organisation_id=DEV_ORG,
+        organisation_outlet_ids=dev_outlet_ids(),
     )
 
 

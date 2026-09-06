@@ -207,6 +207,33 @@ Mumbai was baselined on 6 Sep 2026 (0001 to 0024 recorded as applied by
 hand); `--baseline` is never needed again unless a database is restored from
 a dump without the table.
 
+### 3a. After the P26a deploy (multi-tenancy, D33)
+
+Once the run that applies `0025` and `0026` is approved and green:
+
+1. **Check the backfill** in the Supabase SQL editor: `select slug, name,
+   onboarded_at from organisations` should show `akira` (onboarded) and
+   `akira-dev`; `select code, organisation_id from outlets` should put
+   `AKR-SP01` in `akira` and the rest in `akira-dev`; the profile for
+   `management@simplyakira.com` should carry `akira`'s id.
+2. **Supabase dashboard, two switches**: Authentication → Multi-Factor →
+   enable TOTP; Authentication → Providers → Email → "Allow new users to
+   sign up" off.
+3. **Create the platform login**, locally, against the production `.env`:
+
+   ```bash
+   uv run python scripts/create_platform_admin.py platform@simplyakira.com "AKIRA Platform"
+   ```
+
+   The password prints once and is written to `local/platform-admin.md`
+   (gitignored). Sign in at the site, scan the QR into an authenticator app,
+   and change the password from the Supabase dashboard afterwards if it went
+   anywhere it should not have.
+4. **`management@simplyakira.com` now needs an authenticator**: its
+   organisation is onboarded, so the next sign-in shows the enrol screen
+   before the app. The `@akira.test` logins are in the development
+   organisation and are not asked.
+
 ## 4. Custom domains (optional)
 
 `fly certs add api.<domain>` and a CNAME; Cloudflare Pages has its own

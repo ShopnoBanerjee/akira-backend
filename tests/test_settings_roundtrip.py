@@ -25,6 +25,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.settings_value import resolve, resolve_many, resolve_many_outlets, resolve_time
+from tests.conftest import DEV_ORG, dev_user
 
 pytestmark = pytest.mark.asyncio
 
@@ -49,14 +50,20 @@ async def put(
     await db.execute(
         text(
             """
-            insert into app_settings (key, scope, outlet_id, value, effective_from)
-            values (:k, cast(:scope as setting_scope), :o, cast(:v as jsonb),
+            insert into app_settings
+                (key, scope, outlet_id, organisation_id, value, effective_from)
+            values (:k, cast(:scope as setting_scope), :o, :org, cast(:v as jsonb),
                     now() - interval '1 minute')
             """
         ),
         {
             "k": key,
-            "scope": "outlet" if outlet_id else "global",
+            # As the admin endpoint decides it (D33): outlet, else the
+            # platform's job clock stays global, else the organisation's.
+            "scope": "outlet"
+            if outlet_id
+            else ("global" if key.startswith("jobs.") else "organisation"),
+            "org": None if outlet_id or key.startswith("jobs.") else DEV_ORG,
             "o": outlet_id,
             "v": json.dumps(value),
         },
@@ -72,25 +79,29 @@ async def an_outlet(db: AsyncSession) -> uuid.UUID:
 class TestEveryTypeSurvivesTheRoundTrip:
     async def test_number(self, session: AsyncSession) -> None:
         await put(session, "scoring.band.green", 88.5)
-        assert await resolve(session, "scoring.band.green") == 88.5
+        assert await resolve(session, "scoring.band.green", organisation_id=DEV_ORG) == 88.5
 
     async def test_integer(self, session: AsyncSession) -> None:
         await put(session, "integrity.phash_max_distance", 9)
-        assert await resolve(session, "integrity.phash_max_distance") == 9
+        assert await resolve(session, "integrity.phash_max_distance", organisation_id=DEV_ORG) == 9
 
     async def test_boolean(self, session: AsyncSession) -> None:
         await put(session, "ai_review.enabled", False)
-        assert await resolve(session, "ai_review.enabled") is False
+        assert await resolve(session, "ai_review.enabled", organisation_id=DEV_ORG) is False
 
     async def test_time(self, session: AsyncSession) -> None:
         """The one that would have taken the scheduler down."""
         await put(session, "jobs.digest_time", "09:15")
-        assert await resolve(session, "jobs.digest_time") == "09:15"
-        assert await resolve_time(session, "jobs.digest_time") == time(9, 15)
+        assert await resolve(session, "jobs.digest_time", organisation_id=DEV_ORG) == "09:15"
+        assert await resolve_time(session, "jobs.digest_time", organisation_id=DEV_ORG) == time(
+            9, 15
+        )
 
     async def test_string(self, session: AsyncSession) -> None:
         await put(session, "notifications.channel", "log_only")
-        assert await resolve(session, "notifications.channel") == "log_only"
+        assert (
+            await resolve(session, "notifications.channel", organisation_id=DEV_ORG) == "log_only"
+        )
 
     async def test_a_string_that_looks_like_a_number_stays_a_string(
         self, session: AsyncSession
@@ -98,7 +109,7 @@ class TestEveryTypeSurvivesTheRoundTrip:
         """A restaurant named "123" must not resolve to the integer 123. This
         is the case a bare json.loads gets silently wrong rather than loudly."""
         await put(session, "sales.petpooja_restaurant_name", "123")
-        got = await resolve(session, "sales.petpooja_restaurant_name")
+        got = await resolve(session, "sales.petpooja_restaurant_name", organisation_id=DEV_ORG)
         assert got == "123"
         assert isinstance(got, str)
 
@@ -106,7 +117,7 @@ class TestEveryTypeSurvivesTheRoundTrip:
         self, session: AsyncSession
     ) -> None:
         await put(session, "sales.petpooja_restaurant_name", "true")
-        got = await resolve(session, "sales.petpooja_restaurant_name")
+        got = await resolve(session, "sales.petpooja_restaurant_name", organisation_id=DEV_ORG)
         assert got == "true"
         assert isinstance(got, str)
 
@@ -122,6 +133,7 @@ class TestTheBatchedReadersDecodeTheSameWay:
         got = await resolve_many(
             session,
             ["jobs.digest_time", "notifications.channel", "integrity.phash_max_distance"],
+            organisation_id=DEV_ORG,
         )
         assert got == {
             "jobs.digest_time": "09:15",
@@ -143,8 +155,10 @@ class TestUnsetKeysStillFallBack:
     the registry default rather than None."""
 
     async def test_no_row_means_the_default(self, session: AsyncSession) -> None:
-        assert await resolve(session, "jobs.digest_time") == "09:00"
-        assert await resolve(session, "sales.petpooja_restaurant_name") == ""
+        assert await resolve(session, "jobs.digest_time", organisation_id=DEV_ORG) == "09:00"
+        assert (
+            await resolve(session, "sales.petpooja_restaurant_name", organisation_id=DEV_ORG) == ""
+        )
 
 
 class TestTheAdminScreensDecodeTheSameWay:
@@ -161,7 +175,7 @@ class TestTheAdminScreensDecodeTheSameWay:
         await put(session, "sales.petpooja_restaurant_name", "Akira Ramen")
         await put(session, "jobs.digest_time", "09:15")
 
-        views = await list_settings(session)
+        views = await list_settings(session, dev_user())
         assert len(views) == len(REGISTRY)
         by_key = {v.key: v for v in views}
         assert by_key["sales.petpooja_restaurant_name"].value == "Akira Ramen"
@@ -175,5 +189,5 @@ class TestTheAdminScreensDecodeTheSameWay:
         from app.domains.settings.router import setting_history
 
         await put(session, "sales.petpooja_restaurant_name", "Akira Ramen")
-        rows = await setting_history("sales.petpooja_restaurant_name", session)
+        rows = await setting_history("sales.petpooja_restaurant_name", session, dev_user())
         assert [r.value for r in rows] == ["Akira Ramen"]

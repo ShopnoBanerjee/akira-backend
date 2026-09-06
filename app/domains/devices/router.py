@@ -109,7 +109,7 @@ async def list_devices(
             raise ForbiddenError("You do not have access to that outlet.")
         clauses.append("d.outlet_id = :outlet_id")
         params["outlet_id"] = outlet_id
-    elif not user.is_global:
+    elif not user.is_platform_admin:
         if not user.outlet_ids:
             return []
         clauses.append("d.outlet_id = any(:ids)")

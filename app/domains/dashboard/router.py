@@ -225,7 +225,7 @@ async def _visible_outlets(
             raise ForbiddenError("You do not have access to that outlet.")
         clauses.append("o.id = :outlet_id")
         params["outlet_id"] = outlet_id
-    elif not user.is_global:
+    elif not user.is_platform_admin:
         if not user.outlet_ids:
             return []
         clauses.append("o.id = any(:ids)")

@@ -22,6 +22,7 @@ from app.integrations.sheet_extraction import (
     ExtractedRow,
     PageResult,
 )
+from tests.conftest import DEV_ORG, dev_outlet_ids
 
 pytestmark = pytest.mark.asyncio
 
@@ -60,6 +61,8 @@ def owner(profile_id: uuid.UUID | None = None) -> CurrentUser:
         email=None,
         global_role=UserRole.OWNER,
         is_active=True,
+        organisation_id=DEV_ORG,
+        organisation_outlet_ids=dev_outlet_ids(),
     )
 
 

@@ -62,7 +62,7 @@ def resolve_actor(user: CurrentUser, actor_token: str | None) -> FloorActor:
             profile_id=user.profile_id,
             full_name=user.full_name,
             role=user.global_role,
-            outlet_ids=None if user.is_global else set(user.outlet_ids),
+            outlet_ids=None if user.is_platform_admin else set(user.outlet_ids),
             device_id=None,
         )
     if not actor_token:

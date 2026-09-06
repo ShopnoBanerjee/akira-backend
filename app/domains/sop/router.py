@@ -42,13 +42,17 @@ def _ctx(request: Request) -> dict[str, Any]:
     dependencies=[Depends(require_management)],
     summary="SOP categories",
 )
-async def list_categories(db: DbDep) -> list[CategoryOut]:
+async def list_categories(db: DbDep, user: CurrentUserDep) -> list[CategoryOut]:
+    """The organisation's categories plus the starter kit's (D33)."""
     rows = (
         await db.execute(
             text(
                 "select id, key, label, label_bn, sort_order, icon"
-                " from sop_categories order by sort_order"
-            )
+                " from sop_categories"
+                " where organisation_id is null or organisation_id = cast(:org as uuid)"
+                " order by sort_order"
+            ),
+            {"org": user.organisation_id},
         )
     ).mappings()
     return [CategoryOut(**r) for r in rows]
@@ -62,11 +66,15 @@ async def list_categories(db: DbDep) -> list[CategoryOut]:
 )
 async def list_templates(
     db: DbDep,
+    user: CurrentUserDep,
     category_id: uuid.UUID | None = Query(default=None),
     include_inactive: bool = Query(default=True),
 ) -> list[TemplateSummary]:
     return await service.list_templates(
-        db, category_id=category_id, include_inactive=include_inactive
+        db,
+        category_id=category_id,
+        include_inactive=include_inactive,
+        organisation_id=user.organisation_id,
     )
 
 
@@ -89,8 +97,8 @@ async def create_template(
     dependencies=[Depends(require_management)],
     summary="One template with its items",
 )
-async def get_template(template_id: uuid.UUID, db: DbDep) -> TemplateDetail:
-    return await service.get_template(db, template_id)
+async def get_template(template_id: uuid.UUID, db: DbDep, user: CurrentUserDep) -> TemplateDetail:
+    return await service.get_template(db, template_id, organisation_id=user.organisation_id)
 
 
 @router.patch(
@@ -229,7 +237,7 @@ async def list_assignments(
     if outlet_id is not None:
         clauses.append("a.outlet_id = :outlet_id")
         params["outlet_id"] = outlet_id
-    elif not user.is_global:
+    elif not user.is_platform_admin:
         if not user.outlet_ids:
             return []
         clauses.append("a.outlet_id = any(:ids)")
@@ -252,12 +260,17 @@ async def create_assignment(
 ) -> Assignment:
     template = (
         await db.execute(
-            text("select name from checklist_templates where id = :id and deleted_at is null"),
-            {"id": payload.template_id},
+            text(
+                "select name from checklist_templates where id = :id and deleted_at is null"
+                "   and (organisation_id is null or organisation_id = cast(:org as uuid))"
+            ),
+            {"id": payload.template_id, "org": user.organisation_id},
         )
     ).first()
     if template is None:
         raise NotFoundError("That template does not exist.")
+    if not user.can_access_outlet(payload.outlet_id):
+        raise NotFoundError("That outlet does not exist.")
     outlet = (
         await db.execute(
             text("select code from outlets where id = :id and deleted_at is null"),

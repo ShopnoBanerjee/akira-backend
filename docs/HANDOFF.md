@@ -573,9 +573,47 @@ supersedes and attributes, delegation via `profiles.can_restart_training`
 the floor shell and keys on the actor. Anchors are `data-tour` attributes;
 `tour.test.ts` validates the content on every build.
 
+## 9.5 Multi-tenancy core (P26a, D33) — `organisations`, `app/core/deps.py`, `app/domains/platform/`
+
+Read D33 first. The tenant is `organisations`; AKIRA is `akira` (id
+`a1000000-…-0001`, onboarded) and the seeded world is `akira-dev`
+(`…-0002`, not onboarded, so its owners need no second factor). Reach comes
+from `CurrentUser`: `outlet_ids` never leaves the caller's organisation;
+`visible_outlet_ids` is `None` only for a platform admin; use those, never a
+bare `is_global` branch, when a query fans out. Organisation-level tables
+(SOP catalogue, inventory catalogue, menu map, recipes, events, settings at
+`organisation` scope) filter on `organisation_id is null or = :org` for
+reads and `= :org` for writes; `organisation_id null` rows are the starter
+kit (P26c). The settings resolver takes `organisation_id=` for outlet-less
+reads; `jobs.*` stay global.
+
+The platform admin (`platform@simplyakira.com`, made by
+`scripts/create_platform_admin.py`, password shown once and written to the
+gitignored `local/platform-admin.md`) belongs to no organisation, must
+present a TOTP factor on every session, may read any organisation's `/app`
+screens (each read lands in that tenant's `audit_log` with `action='read'`)
+and is refused every write outside `/platform`. `GET /platform/organisations`
+is the only platform route so far; the web app's `/platform` lists them.
+
+MFA: the token's `aal` claim is the proof; `_mfa_gate` in `deps.py` refuses
+anything but `GET /users/me` and the probes with the `mfa-required` problem
+type until `aal2`; the web app's `MfaPage` enrols (QR + first code) or
+challenges (six digits) against Supabase Auth directly and then re-reads
+`/users/me`. Two Supabase dashboard switches are the owner's: MFA enabled,
+email sign-ups disabled (RUNBOOK_DEPLOY §3).
+
+Tests: `tests/test_tenancy.py` (the fence, the loader, both gates, two
+organisations through the services, RLS as the other tenant). Hand-built
+users in tests carry `organisation_id=DEV_ORG` and
+`organisation_outlet_ids=dev_outlet_ids()` from `tests/conftest.py`.
+
 ## 10. NEXT: go-live
 
-P0–P25 are done (section 7). P25 (6 Sep 2026, D32) added the deploy
+P0–P26a are done (section 7). P26a (7 Sep 2026, D33) made the database
+multi-tenant: organisations, organisation-scoped services and RLS, a
+read-only audited platform admin, a second factor for owners of live
+organisations, no self-signup (§9.5). P26b/P26c follow
+(`docs/PLAN_MULTI_TENANT.md`). P25 (6 Sep 2026, D32) added the deploy
 pipeline: push to `main`, approve in the `production` environment, and the
 API (Render free tier, Singapore, kept awake by `keepalive.yml`; migrations
 first via `scripts/migrate.py`) and the web app (Cloudflare Pages) deploy

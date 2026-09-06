@@ -18,13 +18,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError, ValidationError
 
+#: An organisation's recipes plus the starter kit's (D33).
+_ORG_READ = "(r.organisation_id is null or r.organisation_id = cast(:org as uuid))"
 
-async def list_recipes(db: AsyncSession) -> list[dict[str, Any]]:
+
+async def list_recipes(
+    db: AsyncSession, *, organisation_id: uuid.UUID | None
+) -> list[dict[str, Any]]:
     rows = (
         (
             await db.execute(
                 text(
-                    """
+                    f"""
                     select r.id, r.menu_item_name, r.is_active, r.notes,
                            r.created_at, r.updated_at,
                            coalesce(
@@ -41,10 +46,12 @@ async def list_recipes(db: AsyncSession) -> list[dict[str, Any]]:
                       from recipes r
                       left join recipe_lines rl on rl.recipe_id = r.id
                       left join inventory_items i on i.id = rl.item_id
+                     where {_ORG_READ}
                      group by r.id
                      order by r.menu_item_name
                     """
-                )
+                ),
+                {"org": organisation_id},
             )
         )
         .mappings()
@@ -61,7 +68,9 @@ async def list_recipes(db: AsyncSession) -> list[dict[str, Any]]:
     return out
 
 
-async def unmapped_names(db: AsyncSession) -> list[dict[str, Any]]:
+async def unmapped_names(
+    db: AsyncSession, *, organisation_id: uuid.UUID | None
+) -> list[dict[str, Any]]:
     """Menu names the till has actually sold that no active recipe covers —
     the worklist. Ordered by units sold, because mapping the ramen that
     sells thirty a night matters before the seasonal special."""
@@ -69,13 +78,21 @@ async def unmapped_names(db: AsyncSession) -> list[dict[str, Any]]:
         (
             await db.execute(
                 text(
-                    """
-                    with sold as (
+                    f"""
+                    with org_outlets as (
+                        select id from outlets where organisation_id = cast(:org as uuid)
+                    ),
+                    sold as (
                         select item_name, sum(qty) as units, max(report_date) as last_seen
-                          from sales_item_days group by item_name
+                          from sales_item_days
+                         where outlet_id in (select id from org_outlets)
+                         group by item_name
                         union all
-                        select item_name, null, max(business_date)
-                          from sales_order_items group by item_name
+                        select i.item_name, null, max(i.business_date)
+                          from sales_order_items i
+                          join sales_orders o on o.id = i.order_id
+                         where o.outlet_id in (select id from org_outlets)
+                         group by i.item_name
                     ),
                     merged as (
                         select item_name,
@@ -88,10 +105,12 @@ async def unmapped_names(db: AsyncSession) -> list[dict[str, Any]]:
                      where not exists (
                            select 1 from recipes r
                             where r.menu_item_name = m.item_name and r.is_active
+                              and {_ORG_READ}
                      )
                      order by m.units desc nulls last, m.item_name
                     """
-                )
+                ),
+                {"org": organisation_id},
             )
         )
         .mappings()
@@ -103,6 +122,7 @@ async def unmapped_names(db: AsyncSession) -> list[dict[str, Any]]:
 async def save_recipe(
     db: AsyncSession,
     *,
+    organisation_id: uuid.UUID,
     menu_item_name: str,
     lines: list[dict[str, Any]],
     notes: str | None,
@@ -121,8 +141,9 @@ async def save_recipe(
             text(
                 "select id from inventory_items"
                 " where id = any(:ids) and is_active and deleted_at is null"
+                "   and (organisation_id is null or organisation_id = :org)"
             ),
-            {"ids": item_ids},
+            {"ids": item_ids, "org": organisation_id},
         )
     }
     missing = [str(i) for i in item_ids if i not in known]
@@ -135,15 +156,22 @@ async def save_recipe(
         await db.execute(
             text(
                 """
-                insert into recipes (menu_item_name, is_active, notes, created_by)
-                values (:name, :active, :notes, :by)
-                on conflict (menu_item_name) do update
+                insert into recipes (organisation_id, menu_item_name, is_active, notes, created_by)
+                values (:org, :name, :active, :notes, :by)
+                on conflict (coalesce(organisation_id, '00000000-0000-0000-0000-000000000000'),
+                             menu_item_name) do update
                    set is_active = excluded.is_active,
                        notes = excluded.notes
                 returning id
                 """
             ),
-            {"name": menu_item_name, "active": is_active, "notes": notes, "by": created_by},
+            {
+                "org": organisation_id,
+                "name": menu_item_name,
+                "active": is_active,
+                "notes": notes,
+                "by": created_by,
+            },
         )
     ).scalar_one()
     await db.execute(text("delete from recipe_lines where recipe_id = :r"), {"r": recipe_id})
@@ -164,11 +192,17 @@ async def save_recipe(
     return {"id": recipe_id, "menu_item_name": menu_item_name, "lines": len(lines)}
 
 
-async def delete_recipe(db: AsyncSession, recipe_id: uuid.UUID) -> str:
+async def delete_recipe(
+    db: AsyncSession, recipe_id: uuid.UUID, *, organisation_id: uuid.UUID | None
+) -> str:
+    """Only the organisation's own; a starter-kit recipe is nobody's to delete."""
     name = (
         await db.execute(
-            text("delete from recipes where id = :id returning menu_item_name"),
-            {"id": recipe_id},
+            text(
+                "delete from recipes where id = :id and organisation_id = cast(:org as uuid)"
+                " returning menu_item_name"
+            ),
+            {"id": recipe_id, "org": organisation_id},
         )
     ).scalar_one_or_none()
     if name is None:
