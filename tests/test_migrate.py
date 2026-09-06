@@ -141,3 +141,65 @@ class TestTheHandMigratedDatabase:
         assert await migrate.apply(conn, ALL) == []
         with pytest.raises(RuntimeError, match="not empty"):
             await migrate.baseline(conn, ALL)
+
+
+class TestAgainstLivedInData:
+    """The seeded test database has never had a setting changed; Mumbai had.
+    0026 rewrote 'global' settings to 'organisation' before replacing the
+    0010 check that only knew two scopes, and the first deploy failed on
+    exactly that row. Apply everything before 0026, put Mumbai's shape of
+    data in, then apply 0026."""
+
+    async def test_0026_applies_over_changed_settings(self, conn) -> None:  # type: ignore[no-untyped-def]
+        before = [m for m in ALL if m.filename < "0026"]
+        after = [m for m in ALL if m.filename >= "0026"]
+        assert before and after
+        await migrate.apply(conn, before)
+
+        outlet = await conn.fetchval(
+            "insert into outlets (code, name, city) values ('LIVED-01', 'Lived in', 'Kolkata')"
+            " returning id"
+        )
+        await conn.execute(
+            """
+            insert into app_settings (key, scope, outlet_id, value) values
+                ('ai_review.enabled', 'global', null, 'true'::jsonb),
+                ('integrity.phash_max_distance', 'global', null, '9'::jsonb),
+                ('sales.petpooja_restaurant_name', 'global', null, '"Akira Ramen"'::jsonb),
+                ('jobs.digest_time', 'global', null, '"09:15"'::jsonb),
+                ('ai_review.enabled', 'outlet', $1, 'false'::jsonb),
+                ('scoring.band.green', 'outlet', $1, '85'::jsonb)
+            """,
+            outlet,
+        )
+
+        # The runner wants the whole checkout; it applies only what is pending.
+        assert await migrate.apply(conn, ALL) == [m.filename for m in after]
+
+        rows = await conn.fetch(
+            "select key, scope::text, outlet_id, organisation_id"
+            "  from app_settings order by key, scope"
+        )
+        by_scope = {}
+        for r in rows:
+            by_scope.setdefault(r["scope"], []).append(r)
+        # Every changed setting became the development organisation's, and
+        # was copied to AKIRA; the job clock stayed global; outlet overrides
+        # kept their outlet.
+        assert {r["key"] for r in by_scope["global"]} == {"jobs.digest_time"}
+        org_keys = {r["key"] for r in by_scope["organisation"]}
+        assert org_keys == {
+            "ai_review.enabled",
+            "integrity.phash_max_distance",
+            "sales.petpooja_restaurant_name",
+        }
+        assert {str(r["organisation_id"]) for r in by_scope["organisation"]} == {
+            "a1000000-0000-4000-8000-000000000001",
+            "a1000000-0000-4000-8000-000000000002",
+        }
+        assert all(r["outlet_id"] == outlet for r in by_scope["outlet"])
+        # The new outlet, created before 0026 knew about organisations, was
+        # backfilled into the development organisation like the seeded ones.
+        assert str(
+            await conn.fetchval("select organisation_id from outlets where id = $1", outlet)
+        ) == ("a1000000-0000-4000-8000-000000000002")

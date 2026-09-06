@@ -136,6 +136,17 @@ create unique index recipes_org_menu_item_uq
 
 alter table app_settings add column organisation_id uuid references organisations (id);
 
+-- The 0010 check knows two scopes. It has to go BEFORE any row becomes
+-- 'organisation', or the rewrite below is refused on a database that has
+-- ever had a setting changed - which the seeded test database had not, and
+-- Mumbai had (first deploy of this file failed exactly here).
+alter table app_settings drop constraint app_settings_outlet_scope_consistent;
+alter table app_settings add constraint app_settings_scope_consistent check (
+    (scope = 'global'       and outlet_id is null     and organisation_id is null)
+    or (scope = 'organisation' and outlet_id is null and organisation_id is not null)
+    or (scope = 'outlet'    and outlet_id is not null)
+);
+
 -- The scheduler is one process for the platform; its times stay global.
 update app_settings
    set scope = 'organisation', organisation_id = 'a1000000-0000-4000-8000-000000000002'
@@ -150,12 +161,6 @@ select key, 'organisation', 'a1000000-0000-4000-8000-000000000001', value, effec
   from app_settings
  where scope = 'organisation' and organisation_id = 'a1000000-0000-4000-8000-000000000002';
 
-alter table app_settings drop constraint app_settings_outlet_scope_consistent;
-alter table app_settings add constraint app_settings_scope_consistent check (
-    (scope = 'global'       and outlet_id is null     and organisation_id is null)
-    or (scope = 'organisation' and outlet_id is null and organisation_id is not null)
-    or (scope = 'outlet'    and outlet_id is not null)
-);
 create unique index app_settings_org_uq
     on app_settings (key, organisation_id, effective_from)
     where scope = 'organisation';
