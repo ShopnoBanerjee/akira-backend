@@ -122,15 +122,30 @@ jobs:
           uv run python scripts/migrate.py --plan
           uv run python scripts/migrate.py --apply
 
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-
-      # One machine, always on (fly.toml; app/jobs/scheduler.py). --ha=false is
-      # not optional: Fly's default would create a second machine and a second
-      # scheduler.
-      - name: Deploy the API to Fly.io (bom)
+      # Render builds the Dockerfile itself. autoDeploy is off in render.yaml,
+      # so this API call is the only way a deploy starts: after CI, after the
+      # approval, after the migrations. Then wait for Render to say it is live.
+      - name: Deploy the API to Render (singapore, free)
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: flyctl deploy --remote-only --ha=false --wait-timeout 300
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          test -n "$RENDER_API_KEY" -a -n "$RENDER_SERVICE_ID" || { echo "::error::RENDER_API_KEY and RENDER_SERVICE_ID must be production environment secrets."; exit 1; }
+          auth="Authorization: Bearer $RENDER_API_KEY"
+          deploy=$(curl -fsS -X POST "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys" -H "$auth" -H "Content-Type: application/json" -d '{"clearCache":"do_not_clear"}')
+          id=$(echo "$deploy" | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+          echo "deploy $id started"
+          for i in $(seq 1 60); do
+            status=$(curl -fsS "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys/$id" -H "$auth" | python3 -c 'import sys,json; print(json.load(sys.stdin)["status"])')
+            echo "  $status"
+            case "$status" in
+              live) exit 0 ;;
+              build_failed|update_failed|canceled|deactivated|pre_deploy_failed)
+                echo "::error::Render deploy ended as $status"; exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "::error::Render deploy did not go live within 15 minutes"; exit 1
 
       - name: Smoke the deployment
         env:

@@ -1,0 +1,60 @@
+# Render Blueprint for the AKIRA Ops Suite API (D32 addendum).
+#
+# Free tier, no card: one Docker web service in Singapore, the closest free
+# region to the Mumbai database (about 50-70 ms a query). Free services spin
+# down after fifteen idle minutes, which would stop the in-process scheduler;
+# .github/workflows/keepalive.yml pings /healthz every ten minutes so it never
+# idles. When a card exists, fly.toml (Mumbai, always on) is the better home
+# and the workflow's deploy step is the only thing to change.
+#
+# autoDeploy is off on purpose: GitHub Actions triggers the deploy through
+# Render's API only after CI passed, the owner approved, and the migrations
+# ran. Render deploying on its own from a push would bypass all three.
+#
+# Secrets (sync: false) are set once in the Render dashboard, never here.
+
+services:
+  - type: web
+    name: akira-ops-api
+    runtime: docker
+    region: singapore
+    plan: free
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeploy: false
+    healthCheckPath: /healthz
+    envVars:
+      # The Dockerfile listens on 8000; tell Render's router the same.
+      - key: PORT
+        value: "8000"
+      - key: ENV
+        value: production
+      - key: SCHEDULER_ENABLED
+        value: "true"
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "600"
+      - key: AI_REVIEW_PROVIDER
+        value: openai
+      - key: STOCK_EXTRACT_PROVIDER
+        value: gemini
+      - key: SUPABASE_URL
+        value: https://zvskxgmmlahhybzpcicl.supabase.co
+      - key: SUPABASE_PUBLISHABLE_KEY
+        value: sb_publishable_ySp9Uovntyxh9nJ-QuNm-Q_I40WS4y_
+      - key: SUPABASE_JWKS_URL
+        value: https://zvskxgmmlahhybzpcicl.supabase.co/auth/v1/.well-known/jwks.json
+      - key: CORS_ORIGINS
+        value: https://akira-ops.pages.dev
+      # Set these in the dashboard (Environment tab). The API refuses to
+      # start in production until every one of them is present and real.
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: PHONE_HASH_SALT
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      # SMTP_* are not listed: without them the digest degrades to logging and
+      # says so (D12.6). Add them in the dashboard when a mailbox exists.

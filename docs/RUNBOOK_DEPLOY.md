@@ -69,82 +69,79 @@ existing checks run; when they pass, a `deploy` job waits in the
 
 | Repo | The deploy job |
 |---|---|
-| akira-backend | applies pending migrations (`scripts/migrate.py --apply`, tracked in `schema_migrations`), `flyctl deploy --remote-only --ha=false` to region `bom`, then curls `/healthz` and `/readyz` and fails if either is wrong |
+| akira-backend | applies pending migrations (`scripts/migrate.py --apply`, tracked in `schema_migrations`), asks Render's API to deploy the service and waits for it to report `live`, then curls `/healthz` and `/readyz` and fails if either is wrong |
 | akira-frontend | builds with the production `VITE_*` values, uploads `dist` to Cloudflare Pages with wrangler, then curls the site for the app and the CSP header |
 
 Nothing runs until the repository variable `DEPLOY_ENABLED` is `true`, so
 merging this pipeline changes nothing by itself. Secrets live in the GitHub
 environment, never in the repo. The setup below is yours; about half an
-hour, once.
+hour, once, and no card anywhere.
+
+**Why Render, and why Singapore.** The owner has no card; Fly.io, Cloud Run,
+Koyeb and the rest require one even for their free tiers. Render's free
+Docker web service does not. Its closest region to the Mumbai database is
+Singapore (about 50 to 70 ms a query, what a laptop in Kolkata measured), so
+multi-statement screens will answer in 200 to 300 ms rather than under 100.
+Free services spin down after fifteen idle minutes, which would stop the
+in-process scheduler: `.github/workflows/keepalive.yml` pings `/healthz`
+every ten minutes so it never idles. `fly.toml` stays in the repo for the
+day a card exists; the deploy step is the only thing to change.
 
 ### 2a. Accounts and tokens
 
-1. **Fly.io.** `fly auth signup`, then from `akira-backend`:
-   ```bash
-   fly apps create akira-ops-api --org personal
-   fly tokens create deploy -x 8760h        # a deploy-only token, one year
-   ```
-   Keep the token for 2c.
-2. **Cloudflare.** Create an account. Do **not** use the "Create an app /
-   connect a repository" wizard: that makes Cloudflare build and deploy on
-   every push by itself, around the approval gate. The pipeline creates the
-   Pages project on its first run. You need two values: your **Account ID**
-   (Workers & Pages overview, right-hand column, or the `dash.cloudflare.com/
-   <account id>/...` part of any dashboard URL) and an **API token**: My
-   Profile, API Tokens, Create Token, template "Edit Cloudflare Workers",
-   Continue, Create Token, copy it once.
+1. **Render.** Sign up at render.com with your GitHub account (no card).
+   Dashboard, New, **Blueprint**, connect `ShopnoBanerjee/akira-backend`;
+   Render reads `render.yaml` and asks for the values marked `sync: false`:
+   `DATABASE_URL` (the direct `postgresql+asyncpg://postgres:<password>@db.zvskxgmmlahhybzpcicl.supabase.co:5432/postgres`, or the pooler with `postgresql+asyncpg://` if the direct host fails from Render),
+   `SUPABASE_SECRET_KEY`, `PHONE_HASH_SALT` (generate:
+   `python -c "import secrets; print(secrets.token_urlsafe(32))"`),
+   `GEMINI_API_KEY`. Apply. Render builds once on creation; that first
+   build is fine to let run. Then Account Settings, API Keys, Create API
+   Key (keep it), and note the service id from the service's URL
+   (`srv-...`). Turn nothing else on: auto-deploy is already off in the
+   blueprint.
+2. **Cloudflare.** Create an account, then My Profile, API Tokens, Create
+   Token, template "Edit Cloudflare Workers" (it includes Pages), leave
+   account/zone as offered and IP filtering empty, and note your Account ID
+   from the Workers & Pages overview. Do NOT connect the repository through
+   the Pages wizard: that path deploys on every push by itself, around the
+   approval gate. The pipeline creates the project on its first run.
 3. **Supabase.** Project Settings, Database, Connect: copy the **Session
    pooler** string (host `aws-0-ap-south-1.pooler.supabase.com`, port
    **5432**, user `postgres.zvskxgmmlahhybzpcicl`). GitHub runners are
    IPv4-only and the direct host is IPv6-only; port 6543 is transaction
    mode and will not run migrations.
 
-### 2b. The API's runtime secrets, once
-
-These are read by the running machine, not by the pipeline. Generate a
-fresh salt: `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
-
-```bash
-fly secrets set -a akira-ops-api \
-  DATABASE_URL='postgresql+asyncpg://postgres:<DB_PASSWORD>@db.zvskxgmmlahhybzpcicl.supabase.co:5432/postgres' \
-  SUPABASE_URL='https://zvskxgmmlahhybzpcicl.supabase.co' \
-  SUPABASE_PUBLISHABLE_KEY='sb_publishable_ySp9Uovntyxh9nJ-QuNm-Q_I40WS4y_' \
-  SUPABASE_SECRET_KEY='<sb_secret_...>' \
-  SUPABASE_JWKS_URL='https://zvskxgmmlahhybzpcicl.supabase.co/auth/v1/.well-known/jwks.json' \
-  PHONE_HASH_SALT='<the generated value>' \
-  CORS_ORIGINS='https://akira-ops.pages.dev' \
-  AI_REVIEW_PROVIDER='openai' STOCK_EXTRACT_PROVIDER='gemini' GEMINI_API_KEY='<key>' \
-  SMTP_HOST='<host>' SMTP_PORT='587' SMTP_USERNAME='<user>' SMTP_PASSWORD='<pass>' \
-  SMTP_FROM='AKIRA Ops <ops@<your domain>>'
-```
-
-If `/readyz` reports `unreachable` after the first deploy, Fly's IPv6 egress
-could not reach the direct host: set `DATABASE_URL` to the session pooler
-string from 2a-3 (with `postgresql+asyncpg://`) instead.
-
-### 2c. GitHub, both repositories
+### 2b. GitHub, both repositories
 
 Settings, Environments, New environment `production`, tick **Required
-reviewers** and add yourself. Then, in that environment:
+reviewers** and add yourself. Then:
 
-| Repo | Secrets | Variables |
+| Repo | Environment secrets | Variables |
 |---|---|---|
-| akira-backend | `FLY_API_TOKEN` (2a-1), `MIGRATIONS_DATABASE_URL` (2a-3, plain `postgresql://`) | `API_URL` = `https://akira-ops-api.fly.dev` |
-| akira-frontend | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (2a-2) | `CF_PAGES_PROJECT` = `akira-ops`, `WEB_URL` = `https://akira-ops.pages.dev`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_API_BASE_URL` = the API URL |
+| akira-backend | `RENDER_API_KEY`, `RENDER_SERVICE_ID` (2a-1), `MIGRATIONS_DATABASE_URL` (2a-3, plain `postgresql://`) | **repository** variable `API_URL` = `https://akira-ops-api.onrender.com` (repository-level because the keep-alive job reads it too) |
+| akira-frontend | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (2a-2) | environment variables `CF_PAGES_PROJECT` = `akira-ops`, `WEB_URL` = `https://akira-ops.pages.dev`, `VITE_SUPABASE_URL` = `https://zvskxgmmlahhybzpcicl.supabase.co`, `VITE_SUPABASE_PUBLISHABLE_KEY` = `sb_publishable_ySp9Uovntyxh9nJ-QuNm-Q_I40WS4y_`, `VITE_API_BASE_URL` = the API URL |
 
 Finally, Settings, Secrets and variables, Actions, Variables, **repository**
 variable `DEPLOY_ENABLED` = `true` in each repo. From then on every push to
-`main` that passes CI offers you a deploy to approve. The environment URL on
-the run links to what it deployed.
+`main` that passes CI offers you a deploy to approve, and the keep-alive
+starts pinging.
 
-### 2d. The first deploy
+### 2c. The first deploy
 
 Approve the backend run first (schema, then API), then the frontend run.
 `/healthz` says `"env": "production"`, `/readyz` says `"database": "ok"`;
 the site answers with the CSP header. The runs' smoke steps check exactly
-that and fail loudly otherwise. If the machine restarts in a loop, `fly logs`
-shows the guard's list: `Refusing to start with ENV=production:` followed by
-what is missing.
+that and fail loudly otherwise. If the service restarts in a loop, Render's
+Logs tab shows the guard's list: `Refusing to start with ENV=production:`
+followed by what is missing.
+
+### 2d. Cloudflare Pages project name
+
+The blueprint and the workflow assume `akira-ops`, which gives
+`https://akira-ops.pages.dev`. If that name is taken on Cloudflare, the
+first deploy fails at "pages project create"; change `CF_PAGES_PROJECT`,
+`WEB_URL`, `CORS_ORIGINS` in Render, and Supabase's Site URL together.
 
 ### 2e. Measure
 
@@ -153,11 +150,10 @@ single-statement endpoints in 40 to 80 ms, all of it wire. Beside the
 database the same screens should be under 100 ms; check with the browser's
 network tab on `/dashboard/outlet-health`.
 
-### 2f. Supabase network restrictions (optional, recommended)
+### 2f. Supabase network restrictions (optional)
 
-Project Settings, Database, Network Restrictions: allow only Fly's egress
-addresses (`fly ips list`, plus a machine's IPv6 from `fly ssh console -C
-"curl -6 ifconfig.co"`), GitHub's runner ranges if you want the pipeline's
+Project Settings, Database, Network Restrictions: allow only Render's
+static outbound addresses (Service, Connect, Outbound), GitHub's runner ranges if you want the pipeline's
 migrations to keep working (they change; the pooler accepts them by default),
 and your own address for `scripts/backup_db.py`. Do this AFTER the first
 deploy is verified, because a wrong entry locks out the API too.
@@ -247,11 +243,16 @@ Writes `local/backups/<stamp>/public.dump` and `auth_users.sql` and proves
 `scripts/copy_storage.py`. Both are gitignored; move them off the machine.
 
 **Migrations and deploys.** Push to `main`, approve the run. The pipeline
-applies pending migrations, deploys, and smokes (section 2). `fly deploy
---ha=false` by hand still works for an emergency; `scripts/migrate.py --plan`
-says what a deploy would apply.
+applies pending migrations, deploys, and smokes (section 2). Render's
+"Manual Deploy" button still works for an emergency; `scripts/migrate.py
+--plan` says what a deploy would apply.
 
-**Logs.** `fly logs`. The guard, the scheduler's start line, every
+**The keep-alive.** `keepalive.yml` pings every ten minutes while
+`DEPLOY_ENABLED` is true. GitHub disables schedules in a repository with no
+commits for 60 days; any commit re-enables it. If the Actions tab shows the
+schedule paused, push something.
+
+**Logs.** Render dashboard, the service's Logs tab. The guard, the scheduler's start line, every
 `job_runs` failure and every 5xx land there. Nothing is sent to a telemetry
 vendor.
 

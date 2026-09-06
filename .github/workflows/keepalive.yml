@@ -1,0 +1,34 @@
+name: Keep the API awake
+
+# Render's free tier spins a service down after fifteen idle minutes. The API
+# runs an in-process scheduler (05:00 materialise, 15-minute missed sweep,
+# 09:00 digest) that only fires while the process is up, and its database
+# traffic is also what stops the free Supabase project from pausing. Ten
+# minutes is inside the idle window; GitHub may delay a schedule by a few
+# minutes under load, which the fifteen-minute window absorbs.
+#
+# GitHub disables scheduled workflows in a repository with no commits for 60
+# days. A commit re-enables it; RUNBOOK_DEPLOY section 6 notes this.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    if: vars.DEPLOY_ENABLED == 'true' && vars.API_URL != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: GET /healthz
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          # A sleeping service answers the first request slowly; allow for it.
+          for i in 1 2 3; do
+            body=$(curl -sS --max-time 60 "$API_URL/healthz") && break
+            sleep 10
+          done
+          echo "$body"
+          echo "$body" | grep -q '"status":"ok"' || { echo "::error::healthz did not answer ok"; exit 1; }

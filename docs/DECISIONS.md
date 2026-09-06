@@ -1499,3 +1499,14 @@ whether the pipeline owns migrations, staging.
 registry); a tag-based release flow (the approval click is the release);
 deploying on a schedule; a staging environment now (a second Supabase project
 and bill for a one-outlet system with an approval gate).
+
+**Addendum, same day.** Fly refused to create the app without a card, and the
+owner has none. Asked: Cloudflare cannot host this API (no long-running
+process, no native libraries, containers are paid); Render's free Docker tier
+can, without a card, from Singapore. Accepted trade: 50-70 ms a query instead
+of ~1 ms, and a service that spins down when idle, kept awake by a scheduled
+GitHub workflow pinging `/healthz` every ten minutes so the scheduler and the
+Supabase free project both stay alive. `render.yaml` carries the blueprint
+with `autoDeploy: false`; the Actions job starts each deploy through Render's
+API after the migrations and waits for `live`. `fly.toml` stays for the day a
+card exists.

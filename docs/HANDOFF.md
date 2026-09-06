@@ -577,8 +577,9 @@ the floor shell and keys on the actor. Anchors are `data-tour` attributes;
 
 P0–P25 are done (section 7). P25 (6 Sep 2026, D32) added the deploy
 pipeline: push to `main`, approve in the `production` environment, and the
-API (Fly `bom`, migrations first via `scripts/migrate.py`) and the web app
-(Cloudflare Pages) deploy and smoke themselves. It is switched off until the
+API (Render free tier, Singapore, kept awake by `keepalive.yml`; migrations
+first via `scripts/migrate.py`) and the web app (Cloudflare Pages) deploy
+and smoke themselves. Fly Mumbai (`fly.toml`) waits for a card. It is switched off until the
 owner sets `DEPLOY_ENABLED=true`; RUNBOOK_DEPLOY §2 is the setup.
 
 P0–P23 background (section 7). P23 (6 Sep 2026) made the current feature set
