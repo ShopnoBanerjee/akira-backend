@@ -13,11 +13,15 @@ on:
   # approve, without a commit to hang it on.
   workflow_dispatch:
 
-# One deploy at a time. A second push while a deploy is waiting for approval
-# cancels the older wait, so the approval always applies to the newest code.
+# A newer push cancels the older run for the same ref, including one parked
+# at the approval gate, so the approval always applies to the newest code.
+# (With this false for pushes, a run waiting for approval held the group and
+# every later push sat "pending" with no jobs until someone approved or
+# cancelled it by hand - found on the P26a push.) Deploys themselves are
+# still serialised by the job-level deploy-api group below.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   check:
