@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A manual run from the Actions tab: the same checks, and a deploy to
+  # approve, without a commit to hang it on.
+  workflow_dispatch:
 
 # One deploy at a time. A second push while a deploy is waiting for approval
 # cancels the older wait, so the approval always applies to the newest code.
@@ -88,7 +91,7 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy:
     needs: check
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment:
       name: production
