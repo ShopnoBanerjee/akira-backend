@@ -181,9 +181,11 @@ class Settings(BaseSettings):
                 problems.append(f"CORS_ORIGINS has a non-https origin: {origin}")
         if self.SQL_ECHO:
             problems.append("SQL_ECHO logs every statement, with parameters")
+        # Only when mail is actually configured: without a host the digest
+        # degrades to logging (D12.6) and the sender address is never used.
         sender_domain = self.SMTP_FROM.rstrip(">").rsplit("@", 1)[-1].strip().lower()
-        if sender_domain in {"akira.local", "akira.example", "akira.test"}:
-            problems.append("SMTP_FROM is a placeholder address")
+        if self.smtp_configured and sender_domain in {"akira.local", "akira.example", "akira.test"}:
+            problems.append("SMTP_FROM is a placeholder address (SMTP_HOST is set)")
         return problems
 
 

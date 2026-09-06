@@ -76,11 +76,26 @@ class TestTheProductionGuard:
         assert any(fragment in p for p in cfg.production_problems()), cfg.production_problems()
 
     def test_sql_echo_and_placeholder_sender_are_caught(self) -> None:
-        cfg = isolated_settings(**{**PROD_OK, "SQL_ECHO": True, "SMTP_FROM": "x <a@akira.local>"})
+        cfg = isolated_settings(
+            **{
+                **PROD_OK,
+                "SQL_ECHO": True,
+                "SMTP_HOST": "smtp.example.com",
+                "SMTP_FROM": "x <a@akira.local>",
+            }
+        )
         assert set(cfg.production_problems()) == {
             "SQL_ECHO logs every statement, with parameters",
-            "SMTP_FROM is a placeholder address",
+            "SMTP_FROM is a placeholder address (SMTP_HOST is set)",
         }
+
+    def test_the_default_sender_is_fine_while_mail_is_not_configured(self) -> None:
+        # Render's first boot failed on exactly this: no mailbox yet, the
+        # default sender never used, and the guard refused anyway.
+        cfg = isolated_settings(
+            **{**PROD_OK, "SMTP_HOST": "", "SMTP_FROM": "AKIRA Ops <ops@akira.local>"}
+        )
+        assert cfg.production_problems() == []
 
     def test_the_guard_raises_with_every_problem_listed(self) -> None:
         with pytest.raises(ProductionConfigError) as info:
