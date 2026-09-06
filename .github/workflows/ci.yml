@@ -3,6 +3,11 @@ name: CI
 on:
   push:
     branches: [main]
+    # A docs-only push has nothing to check or deploy; without this every
+    # plan or runbook edit would queue a production deploy for approval.
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
   pull_request:
   # A manual run from the Actions tab: the same checks, and a deploy to
   # approve, without a commit to hang it on.
