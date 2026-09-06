@@ -877,6 +877,62 @@
         }
       }
     },
+    "/onboarding": {
+      "get": {
+        "tags": [
+          "onboarding"
+        ],
+        "summary": "What this outlet still needs before the app can do its job",
+        "description": "A checklist computed from the data itself, so it can never drift out of\nstep with reality. Omit `outlet_id` when the organisation has one outlet.",
+        "operationId": "read_onboarding_onboarding_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outlet_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outlet Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/devices": {
       "get": {
         "tags": [
@@ -8491,6 +8547,101 @@
           "measured"
         ],
         "title": "MenuMixResponse"
+      },
+      "OnboardingStatus": {
+        "properties": {
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outlet Id"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingStep"
+            },
+            "type": "array",
+            "title": "Steps"
+          },
+          "required_done": {
+            "type": "integer",
+            "title": "Required Done"
+          },
+          "required_total": {
+            "type": "integer",
+            "title": "Required Total"
+          },
+          "recommended_done": {
+            "type": "integer",
+            "title": "Recommended Done"
+          },
+          "recommended_total": {
+            "type": "integer",
+            "title": "Recommended Total"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outlet_id",
+          "steps",
+          "required_done",
+          "required_total",
+          "recommended_done",
+          "recommended_total",
+          "ready"
+        ],
+        "title": "OnboardingStatus"
+      },
+      "OnboardingStep": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "why": {
+            "type": "string",
+            "title": "Why"
+          },
+          "how": {
+            "type": "string",
+            "title": "How"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required"
+          },
+          "done": {
+            "type": "boolean",
+            "title": "Done"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "href": {
+            "type": "string",
+            "title": "Href"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "title",
+          "why",
+          "how",
+          "required",
+          "done",
+          "count",
+          "href"
+        ],
+        "title": "OnboardingStep"
       },
       "OrderRow": {
         "properties": {

@@ -22,6 +22,7 @@ from app.domains.devices.router import router as devices_router
 from app.domains.inventory.counts_router import router as stock_counts_router
 from app.domains.inventory.router import router as inventory_router
 from app.domains.jobs.router import router as jobs_router
+from app.domains.onboarding.router import router as onboarding_router
 from app.domains.outlets.router import router as outlets_router
 from app.domains.platform.router import router as platform_router
 from app.domains.sales.router import router as sales_router
@@ -122,6 +123,7 @@ def create_app(cfg: Settings) -> FastAPI:
     application.include_router(users_router)
     application.include_router(platform_router)
     application.include_router(outlets_router)
+    application.include_router(onboarding_router)
     application.include_router(devices_router)
     application.include_router(inventory_router)
     application.include_router(stock_counts_router)
