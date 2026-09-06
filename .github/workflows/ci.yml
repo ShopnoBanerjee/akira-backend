@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# One deploy at a time. A second push while a deploy is waiting for approval
+# cancels the older wait, so the approval always applies to the newest code.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -73,3 +79,71 @@ jobs:
             echo "::error::openapi.json is stale. Run scripts/export_openapi.py and commit."
             exit 1
           }
+
+  # ---------------------------------------------------------------------------
+  # Production. Runs only for a push to main that passed every check above,
+  # only when the owner has switched the pipeline on (repository variable
+  # DEPLOY_ENABLED=true), and only after a reviewer approves it in the
+  # `production` environment. docs/RUNBOOK_DEPLOY.md section 2 is the setup.
+  # ---------------------------------------------------------------------------
+  deploy:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.API_URL }}
+    concurrency:
+      group: deploy-api
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.5.25"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --no-dev
+
+      # Schema first, code second: a new column the API expects must exist
+      # before the machine that reads it starts. Each file runs in its own
+      # transaction and is recorded only if it succeeded (scripts/migrate.py).
+      - name: Apply pending migrations
+        env:
+          MIGRATIONS_DATABASE_URL: ${{ secrets.MIGRATIONS_DATABASE_URL }}
+        run: |
+          uv run python scripts/migrate.py --plan
+          uv run python scripts/migrate.py --apply
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # One machine, always on (fly.toml; app/jobs/scheduler.py). --ha=false is
+      # not optional: Fly's default would create a second machine and a second
+      # scheduler.
+      - name: Deploy the API to Fly.io (bom)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --remote-only --ha=false --wait-timeout 300
+
+      - name: Smoke the deployment
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          for i in $(seq 1 20); do
+            health=$(curl -fsS "$API_URL/healthz" || true)
+            ready=$(curl -fsS "$API_URL/readyz" || true)
+            if echo "$health" | grep -q '"env":"production"' && echo "$ready" | grep -q '"database":"ok"'; then
+              echo "healthz: $health"; echo "readyz:  $ready"; exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::The deployed API did not answer healthy within two minutes."
+          echo "healthz: $health"; echo "readyz: $ready"
+          exit 1

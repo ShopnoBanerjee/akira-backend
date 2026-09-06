@@ -1450,3 +1450,52 @@ than assumed and never sits on the control it points at; the person drawer
 reads the live row so a saved delegation shows; a restart before any attempt
 names who asked (`reset_by_name`); a voluntary re-run no longer blanks the
 completion date on the People page.
+
+## D32 — Deploys are a GitHub Actions job behind an approval, with tracked migrations (P25)
+
+**Context.** Everything ran from the laptop: `fly deploy` by hand, `psql -f`
+by hand in filename order, a runbook line saying "never re-run 0007". The
+owner asked for a proper pipeline. Asked, not assumed: web host, gate,
+whether the pipeline owns migrations, staging.
+
+| Question | Owner's answer |
+|---|---|
+| Web host | Cloudflare Pages (free for commercial use; API stays on Fly `bom`) |
+| Gate | Approval: the job waits in GitHub's `production` environment |
+| Migrations | The pipeline applies them |
+| Staging | Not yet; production only |
+
+**Decision.**
+
+1. **One workflow per repo, `check` then `deploy`.** The deploy job needs
+   the checks, runs only for a push to `main`, only when the repository
+   variable `DEPLOY_ENABLED` is `true`, and only after a required reviewer
+   approves the `production` environment. Merging the pipeline itself
+   deploys nothing; the switch is the owner's.
+2. **`schema_migrations` and `scripts/migrate.py`.** One row per applied
+   file with its checksum; each file runs and is recorded in one
+   transaction; an edited applied file fails the deploy (append-only is a
+   rule, now enforced); a hand-migrated database is refused until
+   `--baseline` records what it already has. The table is RLS-forced and
+   granted to nobody. Schema goes before code in the job so a column the
+   API expects exists before the machine that reads it starts.
+3. **Secrets in the GitHub environment, values in variables.** Fly deploy
+   token, Cloudflare token and account id, the pooler URL for migrations.
+   The `VITE_*` values are variables, not secrets: they ship in the bundle
+   by design. The API's runtime secrets are Fly secrets, set once by hand.
+4. **The pipeline proves the deploy.** Both jobs end by curling what they
+   deployed - `/healthz` must say production and `/readyz` must say the
+   database is ok; the site must serve the app with the CSP header - and
+   fail otherwise, so a green run means a working system, not a finished
+   upload.
+5. **Session pooler for migrations from CI.** GitHub runners are IPv4;
+   Supabase's direct host is IPv6-only; port 5432 (session mode) because
+   the runner uses prepared statements, which transaction mode (6543)
+   breaks. Measured: `aws-0-ap-south-1` is this project's pooler host,
+   not `aws-1` as the runbook had guessed.
+
+**Rejected.** Building the Docker image in Actions and pushing to a registry
+(Fly's remote builder does it in one step and keeps the image in Fly's own
+registry); a tag-based release flow (the approval click is the release);
+deploying on a schedule; a staging environment now (a second Supabase project
+and bill for a one-outlet system with an approval gate).

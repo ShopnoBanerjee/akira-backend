@@ -575,7 +575,13 @@ the floor shell and keys on the actor. Anchors are `data-tour` attributes;
 
 ## 10. NEXT: go-live
 
-P0–P23 are done (section 7). P23 (6 Sep 2026) made the current feature set
+P0–P25 are done (section 7). P25 (6 Sep 2026, D32) added the deploy
+pipeline: push to `main`, approve in the `production` environment, and the
+API (Fly `bom`, migrations first via `scripts/migrate.py`) and the web app
+(Cloudflare Pages) deploy and smoke themselves. It is switched off until the
+owner sets `DEPLOY_ENABLED=true`; RUNBOOK_DEPLOY §2 is the setup.
+
+P0–P23 background (section 7). P23 (6 Sep 2026) made the current feature set
 production-ready without adding features: a startup guard that refuses dev
 defaults under `ENV=production`, a per-caller rate limit, security headers, a
 hardened single-worker Dockerfile, `fly.toml` for Mumbai, CSP/headers files

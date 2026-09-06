@@ -6,9 +6,9 @@ E0–E9 assumed a monorepo and a smaller admin surface; both changed. See
 
 ## Status
 
-**Everything P0–P24 is done, live on Supabase (Mumbai), pushed, and CI is green.**
-P23 made the current features production-ready; deploying is the owner's step
-(`docs/RUNBOOK_DEPLOY.md`).
+**Everything P0–P25 is done, live on Supabase (Mumbai), pushed, and CI is green.**
+P25 is the deploy pipeline; switching it on (accounts, secrets,
+`DEPLOY_ENABLED`) is the owner's step (`docs/RUNBOOK_DEPLOY.md` §2).
 Verify with `git log --oneline | head` rather than trusting this table — it
 sat claiming "P2 next" until P17 had already shipped.
 
@@ -47,6 +47,7 @@ sat claiming "P2 next" until P17 had already shipped.
 | **P22** | OpenAI-format provider replaces Groq; menu mix and attach rates | D28, D29 |
 | **P23** | Production readiness: startup guard, rate limit, headers, Docker/Fly, backup and cut-over scripts | D30 |
 | **P24** | Training walkthrough: role tracks, EN/BN, tracked per person, owner-restartable, delegable; mobile nav for /app | D31 |
+| **P25** | CI/CD: approval-gated deploy jobs (Fly `bom`, Cloudflare Pages), tracked migrations, post-deploy smoke | D32 |
 
 ### Next
 

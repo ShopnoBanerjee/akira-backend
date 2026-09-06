@@ -61,119 +61,126 @@ allow-list, otherwise invitation links land on localhost.
 
 ---
 
-## 2. Deploy the API to Fly.io, region `bom`
+## 2. The pipeline (P25): what deploys, and the one-time setup
 
-Fly's `bom` region is AWS ap-south-1, the same as the database. There is no
-free tier; a `shared-cpu-1x` with 512 MB is about $3 a month.
+Both repositories deploy from GitHub Actions. On every push to `main` the
+existing checks run; when they pass, a `deploy` job waits in the
+**`production` environment until you approve it** in the Actions tab, then:
+
+| Repo | The deploy job |
+|---|---|
+| akira-backend | applies pending migrations (`scripts/migrate.py --apply`, tracked in `schema_migrations`), `flyctl deploy --remote-only --ha=false` to region `bom`, then curls `/healthz` and `/readyz` and fails if either is wrong |
+| akira-frontend | builds with the production `VITE_*` values, uploads `dist` to Cloudflare Pages with wrangler, then curls the site for the app and the CSP header |
+
+Nothing runs until the repository variable `DEPLOY_ENABLED` is `true`, so
+merging this pipeline changes nothing by itself. Secrets live in the GitHub
+environment, never in the repo. The setup below is yours; about half an
+hour, once.
+
+### 2a. Accounts and tokens
+
+1. **Fly.io.** `fly auth signup`, then from `akira-backend`:
+   ```bash
+   fly apps create akira-ops-api --org personal
+   fly tokens create deploy -x 8760h        # a deploy-only token, one year
+   ```
+   Keep the token for 2c.
+2. **Cloudflare.** Create an account, then in the dashboard: Workers &
+   Pages, Create, Pages, "Upload assets" (direct upload), project name
+   `akira-ops`. Then My Profile, API Tokens, Create Token, template
+   "Edit Cloudflare Workers" (it includes Pages), and note your Account ID
+   from the Workers & Pages overview.
+3. **Supabase.** Project Settings, Database, Connect: copy the **Session
+   pooler** string (host `aws-0-ap-south-1.pooler.supabase.com`, port
+   **5432**, user `postgres.zvskxgmmlahhybzpcicl`). GitHub runners are
+   IPv4-only and the direct host is IPv6-only; port 6543 is transaction
+   mode and will not run migrations.
+
+### 2b. The API's runtime secrets, once
+
+These are read by the running machine, not by the pipeline. Generate a
+fresh salt: `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
 
 ```bash
-cd akira-backend
-fly auth login
-fly launch --no-deploy --copy-config --name akira-ops-api --region bom
-```
-
-`--copy-config` keeps the committed `fly.toml`. Answer **no** to a Postgres
-or Redis; the database already exists.
-
-### 2a. Secrets
-
-Never in `fly.toml`, never in the repo. Generate the salt fresh:
-
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
-```bash
-fly secrets set \
+fly secrets set -a akira-ops-api \
   DATABASE_URL='postgresql+asyncpg://postgres:<DB_PASSWORD>@db.zvskxgmmlahhybzpcicl.supabase.co:5432/postgres' \
   SUPABASE_URL='https://zvskxgmmlahhybzpcicl.supabase.co' \
   SUPABASE_PUBLISHABLE_KEY='sb_publishable_ySp9Uovntyxh9nJ-QuNm-Q_I40WS4y_' \
   SUPABASE_SECRET_KEY='<sb_secret_...>' \
   SUPABASE_JWKS_URL='https://zvskxgmmlahhybzpcicl.supabase.co/auth/v1/.well-known/jwks.json' \
   PHONE_HASH_SALT='<the generated value>' \
-  CORS_ORIGINS='https://<your web origin>' \
-  AI_REVIEW_PROVIDER='openai' \
-  STOCK_EXTRACT_PROVIDER='gemini' \
-  GEMINI_API_KEY='<key>' \
+  CORS_ORIGINS='https://akira-ops.pages.dev' \
+  AI_REVIEW_PROVIDER='openai' STOCK_EXTRACT_PROVIDER='gemini' GEMINI_API_KEY='<key>' \
   SMTP_HOST='<host>' SMTP_PORT='587' SMTP_USERNAME='<user>' SMTP_PASSWORD='<pass>' \
   SMTP_FROM='AKIRA Ops <ops@<your domain>>'
 ```
 
-`db.<ref>.supabase.co` is IPv6-only. Fly machines have IPv6 egress, so the
-direct host works; if `/readyz` reports `unreachable` after deploy, switch
-`DATABASE_URL` to the session pooler shown in the Supabase dashboard
-(Connect, Session pooler: host `aws-1-ap-south-1.pooler.supabase.com`, port
-5432, user `postgres.zvskxgmmlahhybzpcicl`). Same credentials, IPv4.
+If `/readyz` reports `unreachable` after the first deploy, Fly's IPv6 egress
+could not reach the direct host: set `DATABASE_URL` to the session pooler
+string from 2a-3 (with `postgresql+asyncpg://`) instead.
 
-### 2b. Deploy
+### 2c. GitHub, both repositories
 
-```bash
-fly deploy --ha=false
-fly scale count 1
-fly status
-curl -s https://akira-ops-api.fly.dev/healthz
-curl -s https://akira-ops-api.fly.dev/readyz
-```
+Settings, Environments, New environment `production`, tick **Required
+reviewers** and add yourself. Then, in that environment:
 
-`/healthz` says `"env": "production"`. `/readyz` says `"database": "ok"`.
-If the machine restarts in a loop, `fly logs` shows the guard's list:
-`Refusing to start with ENV=production:` followed by what is missing.
+| Repo | Secrets | Variables |
+|---|---|---|
+| akira-backend | `FLY_API_TOKEN` (2a-1), `MIGRATIONS_DATABASE_URL` (2a-3, plain `postgresql://`) | `API_URL` = `https://akira-ops-api.fly.dev` |
+| akira-frontend | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (2a-2) | `CF_PAGES_PROJECT` = `akira-ops`, `WEB_URL` = `https://akira-ops.pages.dev`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_API_BASE_URL` = the API URL |
 
-### 2c. Measure
+Finally, Settings, Secrets and variables, Actions, Variables, **repository**
+variable `DEPLOY_ENABLED` = `true` in each repo. From then on every push to
+`main` that passes CI offers you a deploy to approve. The environment URL on
+the run links to what it deployed.
+
+### 2d. The first deploy
+
+Approve the backend run first (schema, then API), then the frontend run.
+`/healthz` says `"env": "production"`, `/readyz` says `"database": "ok"`;
+the site answers with the CSP header. The runs' smoke steps check exactly
+that and fail loudly otherwise. If the machine restarts in a loop, `fly logs`
+shows the guard's list: `Refusing to start with ENV=production:` followed by
+what is missing.
+
+### 2e. Measure
 
 From Kolkata, before this deploy, the dashboard answered in ~250 ms and
-single-statement endpoints in 62 to 81 ms, all of it wire. Beside the
+single-statement endpoints in 40 to 80 ms, all of it wire. Beside the
 database the same screens should be under 100 ms; check with the browser's
 network tab on `/dashboard/outlet-health`.
 
-### 2d. Supabase network restrictions (optional, recommended)
+### 2f. Supabase network restrictions (optional, recommended)
 
 Project Settings, Database, Network Restrictions: allow only Fly's egress
-addresses (`fly ips list`, plus any machine's IPv6 from `fly ssh console -C
-"curl -6 ifconfig.co"`) and your own address for `scripts/backup_db.py`.
-Do this AFTER the deploy is verified, because a wrong entry locks out the
-API too.
+addresses (`fly ips list`, plus a machine's IPv6 from `fly ssh console -C
+"curl -6 ifconfig.co"`), GitHub's runner ranges if you want the pipeline's
+migrations to keep working (they change; the pooler accepts them by default),
+and your own address for `scripts/backup_db.py`. Do this AFTER the first
+deploy is verified, because a wrong entry locks out the API too.
 
----
+## 3. Migrations, from now on
 
-## 3. Deploy the web app
+Add a file to `supabase/migrations/` (append-only, next number), commit,
+push. The pipeline runs `scripts/migrate.py --plan` then `--apply` before
+the API deploys: only files not yet in `schema_migrations` run, each in its
+own transaction, recorded only on success. An applied file whose contents
+changed fails the deploy on purpose. Locally, against the same database:
 
-A static Vite build. Any CDN host works; region does not matter because the
-bundle is cached at the edge and every data call goes to the API. The
-repository carries configuration for three:
+```bash
+uv run python scripts/migrate.py --plan
+```
 
-| Host | Files used | Note |
-|---|---|---|
-| Cloudflare Pages | `public/_headers`, `public/_redirects` | Free for commercial use, unlimited bandwidth. **Recommended.** |
-| Netlify | `public/_headers`, `public/_redirects` | Free tier allows commercial use with a bandwidth cap |
-| Vercel | `vercel.json` | The Hobby plan forbids commercial use; a paid plan is needed |
-
-Settings, whichever host:
-
-| Setting | Value |
-|---|---|
-| Build command | `pnpm build` |
-| Output directory | `dist` |
-| Node | 22 (`NODE_VERSION=22` on Cloudflare/Netlify) |
-| `VITE_SUPABASE_URL` | `https://zvskxgmmlahhybzpcicl.supabase.co` |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_ySp9Uovntyxh9nJ-QuNm-Q_I40WS4y_` |
-| `VITE_API_BASE_URL` | `https://akira-ops-api.fly.dev` (or the custom domain) |
-
-Then put the web origin into the API's `CORS_ORIGINS` (`fly secrets set
-CORS_ORIGINS=...` restarts the machine) and into Supabase's Site URL.
-
-**The Content-Security-Policy** in `_headers`/`vercel.json` allows
-`connect-src` to `*.supabase.co` and `*.fly.dev`. Once the API has a fixed
-origin, replace `https://*.fly.dev` with it. A CSP that names the wrong host
-breaks every request silently, so test in the browser after any edit.
-
----
+Mumbai was baselined on 6 Sep 2026 (0001 to 0024 recorded as applied by
+hand); `--baseline` is never needed again unless a database is restored from
+a dump without the table.
 
 ## 4. Custom domains (optional)
 
-`fly certs add api.<domain>` and a CNAME; the CDN host has its own flow for
-the web origin. Update `CORS_ORIGINS`, `VITE_API_BASE_URL`, the CSP, and
-Supabase's Site URL together.
+`fly certs add api.<domain>` and a CNAME; Cloudflare Pages has its own
+custom-domain flow. Update `CORS_ORIGINS` (fly secrets), the three `VITE_*`
+variables and `WEB_URL`/`API_URL` in GitHub, the CSP in `public/_headers`,
+and Supabase's Site URL together; then push, approve, done.
 
 ---
 
@@ -236,12 +243,10 @@ Writes `local/backups/<stamp>/public.dump` and `auth_users.sql` and proves
 `pg_restore` can read them. Storage (photos, uploads) is a separate copy:
 `scripts/copy_storage.py`. Both are gitignored; move them off the machine.
 
-**Migrations.** Apply with `psql` against the Mumbai host in filename order,
-new files only; then `fly deploy --ha=false`. Never re-run `0007`.
-
-**Deploys.** `fly deploy --ha=false` builds from the Dockerfile, health-checks
-`/healthz`, and swaps. The pool warms at boot (about 4 s) before the machine
-takes traffic.
+**Migrations and deploys.** Push to `main`, approve the run. The pipeline
+applies pending migrations, deploys, and smokes (section 2). `fly deploy
+--ha=false` by hand still works for an emergency; `scripts/migrate.py --plan`
+says what a deploy would apply.
 
 **Logs.** `fly logs`. The guard, the scheduler's start line, every
 `job_runs` failure and every 5xx land there. Nothing is sent to a telemetry

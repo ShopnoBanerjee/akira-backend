@@ -153,6 +153,9 @@ number, not the user. `Retry-After` on the response says how long.
 ## When you change something
 
 - New table → RLS in the same migration, or `test_rls.py` fails the build.
+- New migration → next number, append-only; the pipeline applies it before
+  the API deploys (`scripts/migrate.py`). Never edit an applied file: the
+  deploy refuses a changed checksum.
 - New endpoint → loading state, empty state, error state in the frontend; the
   two-trip budget; `require_management` or an explicit reason why not.
 - New background work → wrap it in `run_job` so it brackets itself in
