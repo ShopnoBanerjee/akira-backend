@@ -1509,4 +1509,6 @@ GitHub workflow pinging `/healthz` every ten minutes so the scheduler and the
 Supabase free project both stay alive. `render.yaml` carries the blueprint
 with `autoDeploy: false`; the Actions job starts each deploy through Render's
 API after the migrations and waits for `live`. `fly.toml` stays for the day a
-card exists.
+card exists. Render is IPv4-only, so the API's `DATABASE_URL` there is the
+session pooler, not the direct host; the runbook says so and the first boot
+proved why.

@@ -92,7 +92,12 @@ day a card exists; the deploy step is the only thing to change.
 1. **Render.** Sign up at render.com with your GitHub account (no card).
    Dashboard, New, **Blueprint**, connect `ShopnoBanerjee/akira-backend`;
    Render reads `render.yaml` and asks for the values marked `sync: false`:
-   `DATABASE_URL` (the direct `postgresql+asyncpg://postgres:<password>@db.zvskxgmmlahhybzpcicl.supabase.co:5432/postgres`, or the pooler with `postgresql+asyncpg://` if the direct host fails from Render),
+   `DATABASE_URL` = the **session pooler** with the asyncpg scheme:
+   `postgresql+asyncpg://postgres.zvskxgmmlahhybzpcicl:<password>@aws-0-ap-south-1.pooler.supabase.com:5432/postgres`.
+   Not the direct `db.<ref>` host: it is IPv6-only and Render has no IPv6
+   (first boot proved it: `Network is unreachable` at pool warm-up).
+   Session mode (5432) keeps asyncpg's prepared statements working;
+   measured 75 ms a query warm through the app's own engine settings.
    `SUPABASE_SECRET_KEY`, `PHONE_HASH_SALT` (generate:
    `python -c "import secrets; print(secrets.token_urlsafe(32))"`),
    `GEMINI_API_KEY`. Apply. Render builds once on creation; that first
